@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "description": "Canonical Whisperr ingestion wire cases. Each SDK conformance test builds the op from `scenario` using its native API, captures the serialized body, and asserts it matches `expected` (ignoring volatile fields noted per case). Channel scenarios use the SDK-public shape {type,address,optedIn,verified}; the wire output uses {channel,address,opted_in,verified}.",
+  "cases": [
+    {
+      "name": "track_with_properties",
+      "op": "track",
+      "scenario": {
+        "externalUserId": "user_8842",
+        "eventType": "payment_failed",
+        "properties": { "amount_cents": 4900, "reason": "card_declined" }
+      },
+      "endpoint": "/v1/events/batch",
+      "expectedEvent": {
+        "external_user_id": "user_8842",
+        "event_type": "payment_failed",
+        "properties": { "amount_cents": 4900, "reason": "card_declined" }
+      },
+      "contextMustContain": ["$message_id"],
+      "occurredAtRfc3339Z": true
+    },
+    {
+      "name": "track_without_properties",
+      "op": "track",
+      "scenario": { "externalUserId": "user_1", "eventType": "trial_started" },
+      "endpoint": "/v1/events/batch",
+      "expectedEvent": {
+        "external_user_id": "user_1",
+        "event_type": "trial_started",
+        "properties": {}
+      },
+      "contextMustContain": ["$message_id"],
+      "occurredAtRfc3339Z": true
+    },
+    {
+      "name": "identify_email_shortcut",
+      "op": "identify",
+      "scenario": {
+        "externalUserId": "user_8842",
+        "traits": { "plan": "pro" },
+        "email": "ada@example.com"
+      },
+      "endpoint": "/v1/identify",
+      "expectedBody": {
+        "external_user_id": "user_8842",
+        "traits": { "plan": "pro" },
+        "channels": [
+          { "channel": "email", "address": "ada@example.com", "opted_in": true }
+        ]
+      }
+    },
+    {
+      "name": "identify_explicit_channel_with_verified",
+      "op": "identify",
+      "scenario": {
+        "externalUserId": "user_7",
+        "preferredChannel": "sms",
+        "channels": [
+          { "type": "sms", "address": "+15551234567", "optedIn": true, "verified": true }
+        ]
+      },
+      "endpoint": "/v1/identify",
+      "expectedBody": {
+        "external_user_id": "user_7",
+        "preferred_channel": "sms",
+        "channels": [
+          { "channel": "sms", "address": "+15551234567", "opted_in": true, "verified": true }
+        ]
+      }
+    }
+  ]
+}
