@@ -26,6 +26,7 @@
         "scenario": { "type": "object" },
         "endpoint": { "type": "string", "pattern": "^/v1/" },
         "expectedEvent": { "type": "object" },
+        "expectedOccurredAt": { "type": "string" },
         "expectedBody": { "type": "object" },
         "contextMustContain": {
           "type": "array",

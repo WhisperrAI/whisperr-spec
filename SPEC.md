@@ -47,6 +47,8 @@ PostHog project key, not a secret.
   `identify()` and backfills buffered anonymous events.
 - `event_type` (string, required) — lowercase `snake_case`
   (`^[a-z0-9]+(?:_[a-z0-9]+)*$`). The server rejects anything else.
+  SDKs should validate this before enqueueing and surface/drop invalid events so
+  one bad name cannot poison an otherwise valid batch.
 - `occurred_at` (string) — RFC3339 UTC with millisecond precision and a `Z`
   suffix. Must be within +5 min / −30 days of now.
 - `properties` (object) — empty serializes as `{}`, never `[]`.

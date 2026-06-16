@@ -34,6 +34,25 @@
       "occurredAtRfc3339Z": true
     },
     {
+      "name": "track_timestamp_truncates_to_milliseconds",
+      "op": "track",
+      "scenario": {
+        "externalUserId": "user_1",
+        "eventType": "feature_used",
+        "properties": { "source": "timestamp_precision" },
+        "clockIso": "2026-05-31T12:00:00.123456Z"
+      },
+      "endpoint": "/v1/events/batch",
+      "expectedEvent": {
+        "external_user_id": "user_1",
+        "event_type": "feature_used",
+        "properties": { "source": "timestamp_precision" }
+      },
+      "expectedOccurredAt": "2026-05-31T12:00:00.123Z",
+      "contextMustContain": ["$message_id"],
+      "occurredAtRfc3339Z": true
+    },
+    {
       "name": "identify_email_shortcut",
       "op": "identify",
       "scenario": {
