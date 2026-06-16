@@ -9,5 +9,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate conformance fixtures are valid JSON
-        run: python3 -c "import json,glob,sys; [json.load(open(f)) for f in glob.glob('conformance/*.json')]; print('conformance JSON OK')"
+      - name: Validate JSON fixtures and schemas
+        run: python3 -c "import json,glob; [json.load(open(f)) for f in glob.glob('conformance/*.json') + glob.glob('schemas/*.json')]; print('spec JSON OK')"

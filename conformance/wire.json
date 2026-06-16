@@ -1,4 +1,5 @@
 {
+  "$schema": "../schemas/wire.schema.json",
   "version": 1,
   "description": "Canonical Whisperr ingestion wire cases. Each SDK conformance test builds the op from `scenario` using its native API, captures the serialized body, and asserts it matches `expected` (ignoring volatile fields noted per case). Channel scenarios use the SDK-public shape {type,address,optedIn,verified}; the wire output uses {channel,address,opted_in,verified}.",
   "cases": [

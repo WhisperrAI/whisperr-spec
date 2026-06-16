@@ -1,0 +1,63 @@
+{
+  "$schema": "../schemas/behavior.schema.json",
+  "version": 1,
+  "description": "Canonical SDK delivery behavior. SDKs may implement queues differently, but these outcomes must match: auth and exhausted transient failures retain the event for a later flush; permanent client errors drop it.",
+  "cases": [
+    {
+      "name": "auth_rejection_retains_queue",
+      "op": "track",
+      "scenario": {
+        "externalUserId": "user_1",
+        "eventType": "feature_used",
+        "properties": { "source": "behavior_conformance" }
+      },
+      "clientOptions": { "maxRetries": 0 },
+      "firstResponse": { "classification": "auth", "status": 401 },
+      "recoveryResponse": { "classification": "ok", "status": 202 },
+      "expect": {
+        "errorType": "auth",
+        "retainedAfterFirstFlush": true,
+        "deliveredAfterRecovery": true,
+        "retriesAfterRecovery": true,
+        "stableMessageIdOnRetry": true
+      }
+    },
+    {
+      "name": "transient_exhaustion_retains_queue",
+      "op": "track",
+      "scenario": {
+        "externalUserId": "user_1",
+        "eventType": "sync_failed",
+        "properties": { "source": "behavior_conformance" }
+      },
+      "clientOptions": { "maxRetries": 0 },
+      "firstResponse": { "classification": "retry", "status": 503 },
+      "recoveryResponse": { "classification": "ok", "status": 202 },
+      "expect": {
+        "errorType": "retry_exhausted",
+        "retainedAfterFirstFlush": true,
+        "deliveredAfterRecovery": true,
+        "retriesAfterRecovery": true,
+        "stableMessageIdOnRetry": true
+      }
+    },
+    {
+      "name": "permanent_client_error_drops_event",
+      "op": "track",
+      "scenario": {
+        "externalUserId": "user_1",
+        "eventType": "malformed_event",
+        "properties": { "source": "behavior_conformance" }
+      },
+      "clientOptions": { "maxRetries": 0 },
+      "firstResponse": { "classification": "drop", "status": 400 },
+      "recoveryResponse": { "classification": "ok", "status": 202 },
+      "expect": {
+        "errorType": "dropped",
+        "retainedAfterFirstFlush": false,
+        "deliveredAfterRecovery": false,
+        "retriesAfterRecovery": false
+      }
+    }
+  ]
+}

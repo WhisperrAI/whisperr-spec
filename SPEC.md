@@ -1,10 +1,14 @@
-# Whisperr SDK wire spec
+# Whisperr SDK spec
 
-The single source of truth for the wire contract every Whisperr SDK must produce.
+The single source of truth for the ingestion contract every Whisperr SDK must
+produce and honor.
 The SDKs (`@whisperr/web`, `@whisperr/react`, `@whisperr/next`, `whisperr-flutter`,
 `@whisperr/node`, `whisperr` for Python, `whisperr/php`) each hand-implement this
-contract, so [`conformance/wire.json`](conformance/wire.json) pins the exact
-expected output and every SDK runs a conformance test against it.
+contract, so the fixtures pin the expected behavior:
+
+- [`conformance/wire.json`](conformance/wire.json) pins serialized request bodies.
+- [`conformance/behavior.json`](conformance/behavior.json) pins retry/drop/retain
+  outcomes.
 
 ## Endpoints
 
@@ -77,8 +81,19 @@ PostHog project key, not a secret.
 Convenience shortcuts in the SDK APIs (`email` / `phone` / `pushToken`) expand to
 opted-in `email` / `sms` / `push` channels respectively.
 
-## Delivery contract (informative)
+## Delivery contract
 
-SDKs queue + batch and classify responses identically: `2xx` = ok; `401/403` =
-stop (key rejected); `429` and `5xx` = retry with backoff; other `4xx` = drop
-(malformed). Idempotency (`$message_id`) makes retries safe.
+SDKs may differ internally, but they must converge on these outcomes:
+
+| Response | Classification | SDK outcome |
+|---|---|---|
+| `2xx` | ok | Remove the delivered op/batch from the queue. |
+| `401`/`403` | auth | Stop flushing, emit/surface `auth`, retain the op/batch for a later flush. |
+| `429`, `5xx`, network/timeout | retry | Retry with bounded backoff; after retries are exhausted, emit/surface `retry_exhausted` and retain the op/batch. |
+| other `4xx` | drop | Emit/surface `dropped` and remove the offending op/batch. |
+
+Retries must preserve the same `$message_id` for the same event.
+
+These rules are executable in
+[`conformance/behavior.json`](conformance/behavior.json). Add or change behavior
+there before changing SDK implementations.
