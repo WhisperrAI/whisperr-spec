@@ -2,9 +2,10 @@
 
 The single source of truth for the ingestion contract every Whisperr SDK must
 produce and honor.
-The SDKs (`@whisperr/web`, `@whisperr/react`, `@whisperr/next`, `whisperr-flutter`,
-`@whisperr/node`, `whisperr` for Python, `whisperr/php`) each hand-implement this
-contract, so the fixtures pin the expected behavior:
+The SDKs (`@whisperr/web`, `@whisperr/react`, `@whisperr/next`,
+`@whisperr/react-native`, `whisperr-flutter`, `whisperr-swift`, `@whisperr/node`,
+`Whisperr` for .NET, `whisperr` for Python, `whisperr/php`) each hand-implement
+this contract, so the fixtures pin the expected behavior:
 
 - [`conformance/wire.json`](conformance/wire.json) pins serialized request bodies.
 - [`conformance/behavior.json`](conformance/behavior.json) pins retry/drop/retain
@@ -124,8 +125,13 @@ lowercase hex.
     attaches it as an opted-in push channel, unless that call supplies its own
     `pushToken` or an explicit push channel. The buffer is memory-only — FCM and
     APNs re-deliver the token on every launch.
+  - **Empty / whitespace token:** silently ignored — no buffer, no request.
+    `getToken()` can return an empty string before the device has registered,
+    and `setPushToken` is documented as safe to call on every launch, so an
+    empty token must be a no-op (not an error and not a buffered value). All
+    SDKs agree on silent-ignore.
   - **Dedup (persisted):** the SDK remembers the last (user, token) pair it
-    sent and persists it through the SDK's storage layer, alongside the
+    *delivered* and persists it through the SDK's storage layer, alongside the
     persisted identity. Setting the same token again for the same user is a
     no-op — including after an app restart — so wiring `onTokenRefresh` /
     every-launch `getToken()` can't spam identify. A different token always
@@ -134,11 +140,48 @@ lowercase hex.
     persistence the every-launch `getToken()` wiring would re-send identify on
     each start and a post-restart rotation would strand the old token
     forever — persistence is required, not optional.
+  - **Restore is not conditional on `identify()`.** Apps call `identify(user)`
+    in the same launch tick as construction, before the async restore resolves.
+    The SDK must still restore the persisted last-sent pair; skipping the
+    restore because `identify()` already ran leaves the pair null, so a
+    post-restart rotation sends no opt-out (stale tokens accumulate) and the
+    same-token dedup is defeated (identify spam every launch). Restoring after
+    `identify()` is safe: `setPushToken` only ever opts out / dedups against a
+    pair whose user matches the current user, so a pair belonging to a prior
+    user is ignored on use. Only `reset()` invalidates the pair.
+  - **Mark on delivery, not on enqueue.** The dedup pair records what was
+    *delivered*. If the request carrying a token is dropped (a non-retryable
+    `4xx`) or evicted from a full queue before delivery, the SDK clears the
+    pair for that (user, token) so the next `setPushToken` re-registers it —
+    otherwise a single rejected registration wedges the token opted-out of
+    every future attempt. (Retryable failures retain the op and the pair; the
+    op is redelivered.)
   - `reset()` (logout) clears the buffered token and the last-sent pair —
     including the persisted copy; after the next login the app calls
-    `setPushToken` again.
+    `setPushToken` again (which re-registers, since the pair was forgotten).
 
-These flows are executable in [`conformance/push.json`](conformance/push.json).
+`identify()` **also rotates.** When an `identify()` call carries an opted-in
+push token (via the `pushToken` shortcut or an explicit push channel) that
+differs from the last token this SDK sent for that user, it opts the previous
+token out in the same body — exactly like `setPushToken`. Passing `pushToken`
+to `identify` must not strand the earlier token opted-in.
+
+Most of these flows are executable in
+[`conformance/push.json`](conformance/push.json) — including `reset`, the
+empty/whitespace-token case, the `identify(pushToken:)` rotation, and the
+restart-then-`identify()` restore cases. The mark-on-delivery clearing is the
+one flow not pinned there (the push harness never injects delivery failures);
+it is covered by per-SDK unit tests.
+
+### Known limitations
+
+- **User switch without `reset()`.** If the app calls `identify(userB)` while
+  `userA`'s token is still registered — without a `reset()` in between — this
+  SDK does not opt `userA`'s token out (an SDK instance only ever retires a
+  token for the user it belongs to). The token stays opted-in for `userA`.
+  Retiring it needs a product decision (server-side retirement on user switch
+  vs. SDK-side) and is tracked separately; apps that hand one device between
+  users should call `reset()` on logout.
 
 ## Delivery contract
 
