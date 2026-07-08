@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/push.schema.json",
   "version": 1,
-  "description": "Canonical push-token capture flows for SDKs exposing setPushToken (mobile SDKs). Each case runs `steps` through the SDK's public API in order — `identify` maps to identify() with the SDK-public scenario shape, `setPushToken` maps to setPushToken(token) — then asserts that the bodies of ALL requests sent to /v1/identify equal `expectedBodies`, in order. This pins the contract: a token set with a known user sends a partial identify (external_user_id + the push channel only); a token set before any user is buffered in memory and attached to the next identify; setting the same token again for the same user is a no-op; a different token (rotation) sends a new partial identify that opts out the previously sent token (opted_in: false) and opts in the new one, so stale tokens from this device are retired while other devices' tokens are untouched.",
+  "description": "Canonical push-token capture flows for SDKs exposing setPushToken (mobile SDKs). Each case runs `steps` through the SDK's public API in order — `identify` maps to identify() with the SDK-public scenario shape, `setPushToken` maps to setPushToken(token), `restart` tears down the client and constructs a fresh instance sharing the SAME persistence/storage (simulating an app relaunch; the persisted identity and last-sent token must be restored) — then asserts that the bodies of ALL requests sent to /v1/identify across the whole case equal `expectedBodies`, in order. This pins the contract: a token set with a known user sends a partial identify (external_user_id + the push channel only); a token set before any user is buffered in memory and attached to the next identify; setting the same token again for the same user is a no-op, INCLUDING after a restart (the last-sent (user, token) pair is persisted, so every-launch getToken() wiring never spams identify); a different token (rotation) sends a new partial identify that opts out the previously sent token (opted_in: false) and opts in the new one — even when the rotation happens after a restart — so stale tokens from this device are retired while other devices' tokens are untouched.",
   "cases": [
     {
       "name": "set_push_token_after_identify",
@@ -56,6 +56,49 @@
           "external_user_id": "user_1",
           "channels": [
             { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "set_push_token_same_token_after_restart_dedupes",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" },
+        { "restart": true },
+        { "setPushToken": "fcm_tok_a" }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "set_push_token_rotation_after_restart_opts_out_old",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" },
+        { "restart": true },
+        { "setPushToken": "fcm_tok_b" }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": false },
+            { "channel": "push", "address": "fcm_tok_b", "opted_in": true }
           ]
         }
       ]

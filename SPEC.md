@@ -124,12 +124,19 @@ lowercase hex.
     attaches it as an opted-in push channel, unless that call supplies its own
     `pushToken` or an explicit push channel. The buffer is memory-only — FCM and
     APNs re-deliver the token on every launch.
-  - **Dedup:** the SDK remembers the last (user, token) pair it sent; setting
-    the same token again for the same user is a no-op, so wiring
-    `onTokenRefresh` / every-launch `getToken()` can't spam identify. A
-    different token always sends.
-  - `reset()` (logout) clears both the buffered and the last-sent token; after
-    the next login the app calls `setPushToken` again.
+  - **Dedup (persisted):** the SDK remembers the last (user, token) pair it
+    sent and persists it through the SDK's storage layer, alongside the
+    persisted identity. Setting the same token again for the same user is a
+    no-op — including after an app restart — so wiring `onTokenRefresh` /
+    every-launch `getToken()` can't spam identify. A different token always
+    sends, and because the last-sent pair survives restarts, a rotation that
+    happens after a relaunch still opts out the stale token. Without
+    persistence the every-launch `getToken()` wiring would re-send identify on
+    each start and a post-restart rotation would strand the old token
+    forever — persistence is required, not optional.
+  - `reset()` (logout) clears the buffered token and the last-sent pair —
+    including the persisted copy; after the next login the app calls
+    `setPushToken` again.
 
 These flows are executable in [`conformance/push.json`](conformance/push.json).
 

@@ -46,7 +46,8 @@
             "externalUserId": { "type": "string", "minLength": 1 }
           }
         },
-        "setPushToken": { "type": "string", "minLength": 1 }
+        "setPushToken": { "type": "string", "minLength": 1 },
+        "restart": { "const": true }
       }
     }
   }
