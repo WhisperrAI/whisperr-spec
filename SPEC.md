@@ -9,6 +9,9 @@ contract, so the fixtures pin the expected behavior:
 - [`conformance/wire.json`](conformance/wire.json) pins serialized request bodies.
 - [`conformance/behavior.json`](conformance/behavior.json) pins retry/drop/retain
   outcomes.
+- [`conformance/push.json`](conformance/push.json) pins push-token capture flows
+  (`setPushToken`) for the SDKs that expose them (mobile: React Native, Flutter,
+  Swift).
 
 ## Endpoints
 
@@ -82,6 +85,60 @@ PostHog project key, not a secret.
 
 Convenience shortcuts in the SDK APIs (`email` / `phone` / `pushToken`) expand to
 opted-in `email` / `sms` / `push` channels respectively.
+
+### Push tokens
+
+A push token (FCM registration token, APNs device token) is just a `push`
+channel: the token string goes in `address`. APNs device tokens are sent as
+lowercase hex.
+
+- **Channels upsert by `(channel, address)`.** On identify, the server upserts
+  each incoming channel keyed by its type *and* address. Two different push
+  tokens are therefore two distinct channels — sending a new token does NOT
+  implicitly remove the old one. `opted_in: false` for a known
+  `(channel, address)` opts that channel out (sets `opted_out_at`); it is how a
+  stale entry is retired over the wire.
+- **Rotation = opt out the old token, opt in the new one.** There is no
+  channel-patch endpoint; token refresh rides a **partial identify** — a body
+  with `external_user_id` and `channels` only, no `traits` key (traits merge
+  server-side, so a partial identify never clears them). When the SDK knows the
+  previously sent token, the rotation payload carries both entries:
+
+  ```json
+  {
+    "external_user_id": "user_8842",
+    "channels": [
+      { "channel": "push", "address": "<old token>", "opted_in": false },
+      { "channel": "push", "address": "<new token>", "opted_in": true }
+    ]
+  }
+  ```
+
+  An SDK instance only ever opts out a token it sent itself, so tokens
+  belonging to the user's other devices are never touched — multi-device push
+  accumulates safely, and stale tokens from *this* device do not.
+- **`setPushToken(token)`** — mobile SDKs expose this capture method:
+  - With a current user: enqueue the partial identify (opting out the previous
+    token, if any, as above) and flush.
+  - Before any `identify()`: buffer the token in memory; the next `identify()`
+    attaches it as an opted-in push channel, unless that call supplies its own
+    `pushToken` or an explicit push channel. The buffer is memory-only — FCM and
+    APNs re-deliver the token on every launch.
+  - **Dedup (persisted):** the SDK remembers the last (user, token) pair it
+    sent and persists it through the SDK's storage layer, alongside the
+    persisted identity. Setting the same token again for the same user is a
+    no-op — including after an app restart — so wiring `onTokenRefresh` /
+    every-launch `getToken()` can't spam identify. A different token always
+    sends, and because the last-sent pair survives restarts, a rotation that
+    happens after a relaunch still opts out the stale token. Without
+    persistence the every-launch `getToken()` wiring would re-send identify on
+    each start and a post-restart rotation would strand the old token
+    forever — persistence is required, not optional.
+  - `reset()` (logout) clears the buffered token and the last-sent pair —
+    including the persisted copy; after the next login the app calls
+    `setPushToken` again.
+
+These flows are executable in [`conformance/push.json`](conformance/push.json).
 
 ## Delivery contract
 

@@ -70,6 +70,21 @@
       }
     },
     {
+      "name": "identify_push_token_shortcut",
+      "op": "identify",
+      "scenario": {
+        "externalUserId": "user_8842",
+        "pushToken": "fcm_tok_123"
+      },
+      "endpoint": "/v1/identify",
+      "expectedBody": {
+        "external_user_id": "user_8842",
+        "channels": [
+          { "channel": "push", "address": "fcm_tok_123", "opted_in": true }
+        ]
+      }
+    },
+    {
       "name": "identify_explicit_channel_with_verified",
       "op": "identify",
       "scenario": {
