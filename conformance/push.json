@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/push.schema.json",
   "version": 1,
-  "description": "Canonical push-token capture flows for SDKs exposing setPushToken (mobile SDKs). Each case runs `steps` through the SDK's public API in order — `identify` maps to identify() with the SDK-public scenario shape, `setPushToken` maps to setPushToken(token), `restart` tears down the client and constructs a fresh instance sharing the SAME persistence/storage (simulating an app relaunch; the persisted identity and last-sent token must be restored) — then asserts that the bodies of ALL requests sent to /v1/identify across the whole case equal `expectedBodies`, in order. This pins the contract: a token set with a known user sends a partial identify (external_user_id + the push channel only); a token set before any user is buffered in memory and attached to the next identify; setting the same token again for the same user is a no-op, INCLUDING after a restart (the last-sent (user, token) pair is persisted, so every-launch getToken() wiring never spams identify); a different token (rotation) sends a new partial identify that opts out the previously sent token (opted_in: false) and opts in the new one — even when the rotation happens after a restart — so stale tokens from this device are retired while other devices' tokens are untouched.",
+  "description": "Canonical push-token capture flows for SDKs exposing setPushToken (mobile SDKs). Each case runs `steps` through the SDK's public API in order — `identify` maps to identify() with the SDK-public scenario shape (an optional `pushToken` expands to an opted-in push channel), `setPushToken` maps to setPushToken(token), `restart` tears down the client and constructs a fresh instance sharing the SAME persistence/storage (simulating an app relaunch; the persisted identity and last-sent token must be restored, EVEN when the relaunch calls identify() in the same tick — restore must not be skipped just because identify() ran), `reset` maps to reset()/logout (clearing the buffered token, the current user, and the persisted last-sent pair) — then asserts that the bodies of ALL requests sent to /v1/identify across the whole case equal `expectedBodies`, in order. This pins the contract: a token set with a known user sends a partial identify (external_user_id + the push channel only); a token set before any user is buffered in memory and attached to the next identify; an empty or whitespace-only token is silently ignored (safe to call every launch even before FCM/APNs has a token); setting the same token again for the same user is a no-op, INCLUDING after a restart-then-reidentify (the last-sent (user, token) pair is persisted, so every-launch getToken() wiring never spams identify); a different token (rotation) sends a new partial identify that opts out the previously sent token (opted_in: false) and opts in the new one — whether the new token arrives via setPushToken OR via identify(pushToken:), and even when the rotation happens after a restart-then-reidentify — so stale tokens from this device are retired while other devices' tokens are untouched. reset() forgets the pair so the next login re-registers the device. NOTE: the dedupe pair is a mark of what was DELIVERED — if the carrying request is dropped (a non-retryable 4xx) or evicted from a full queue, the SDK clears the pair so the token re-registers on the next attempt (not pinned here since this harness never injects failures; see the per-SDK unit tests and SPEC.md).",
   "cases": [
     {
       "name": "set_push_token_after_identify",
@@ -115,6 +115,121 @@
           "traits": { "plan": "pro" },
           "channels": [
             { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "set_push_token_rotation_after_restart_and_reidentify_opts_out_old",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" },
+        { "restart": true },
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_b" }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        },
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": false },
+            { "channel": "push", "address": "fcm_tok_b", "opted_in": true }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "set_push_token_same_token_after_restart_and_reidentify_dedupes",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" },
+        { "restart": true },
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        },
+        { "external_user_id": "user_1" }
+      ]
+    },
+    {
+      "name": "reset_clears_push_dedupe_then_reregisters",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" },
+        { "reset": true },
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        },
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "set_push_token_empty_or_whitespace_ignored",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "" },
+        { "setPushToken": "   " },
+        { "setPushToken": "fcm_tok_a" }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "identify_with_push_token_opts_out_previous",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" },
+        { "identify": { "externalUserId": "user_1", "pushToken": "fcm_tok_b" } }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": false },
+            { "channel": "push", "address": "fcm_tok_b", "opted_in": true }
           ]
         }
       ]
