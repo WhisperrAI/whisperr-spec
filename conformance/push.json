@@ -1,0 +1,80 @@
+{
+  "$schema": "../schemas/push.schema.json",
+  "version": 1,
+  "description": "Canonical push-token capture flows for SDKs exposing setPushToken (mobile SDKs). Each case runs `steps` through the SDK's public API in order — `identify` maps to identify() with the SDK-public scenario shape, `setPushToken` maps to setPushToken(token) — then asserts that the bodies of ALL requests sent to /v1/identify equal `expectedBodies`, in order. This pins the contract: a token set with a known user sends a partial identify (external_user_id + the push channel only); a token set before any user is buffered in memory and attached to the next identify; setting the same token again for the same user is a no-op; a different token (rotation) sends a new partial identify that opts out the previously sent token (opted_in: false) and opts in the new one, so stale tokens from this device are retired while other devices' tokens are untouched.",
+  "cases": [
+    {
+      "name": "set_push_token_after_identify",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "set_push_token_rotation_replaces",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" },
+        { "setPushToken": "fcm_tok_b" }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": false },
+            { "channel": "push", "address": "fcm_tok_b", "opted_in": true }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "set_push_token_dedupes_same_token",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" },
+        { "setPushToken": "fcm_tok_a" }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "set_push_token_before_identify_buffers",
+      "steps": [
+        { "setPushToken": "fcm_tok_a" },
+        { "identify": { "externalUserId": "user_1", "traits": { "plan": "pro" } } }
+      ],
+      "expectedBodies": [
+        {
+          "external_user_id": "user_1",
+          "traits": { "plan": "pro" },
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

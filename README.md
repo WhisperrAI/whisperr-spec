@@ -10,6 +10,9 @@ The single source of truth for Whisperr SDK ingestion behavior.
 - [`conformance/behavior.json`](conformance/behavior.json) — canonical delivery
   semantics for auth failures, transient retry exhaustion, permanent client
   errors, queue retention, and stable retry ids.
+- [`conformance/push.json`](conformance/push.json) — canonical push-token
+  capture flows (`setPushToken`: partial re-identify, rotation, dedup,
+  buffer-until-identify) for the SDKs that expose them.
 - [`schemas/`](schemas) — JSON Schemas for the conformance fixtures.
 
 SDK tests default to the published fixtures:
