@@ -108,39 +108,41 @@
       "name": "out_of_order_creation_cannot_undo_block",
       "proves": "03: occurrence ordering prevents late creation from reactivating an account",
       "given": {
-        "inbound": [
-          {
-            "specversion": "1.0",
-            "type": "user.updated",
-            "id": "evt_2",
-            "source": "urn:auth0:tenant.example.auth0.com",
-            "a0tenant": "tenant_fixture",
-            "a0stream": "est_fixture",
-            "time": "2026-08-31T09:16:00.000Z",
-            "data": {
-              "object": {
-                "user_id": "auth0|991",
-                "blocked": true
-              }
+        "inbound": {
+          "sequence": [
+            {
+              "specversion": "1.0",
+              "type": "user.updated",
+              "id": "evt_2",
+              "source": "urn:auth0:tenant.example.auth0.com",
+              "a0tenant": "tenant_fixture",
+              "a0stream": "est_fixture",
+              "time": "2026-08-31T09:16:00.000Z",
+              "data": {
+                "object": {
+                  "user_id": "auth0|991",
+                  "blocked": true
+                }
+              },
+              "bearer_valid": true
             },
-            "bearer_valid": true
-          },
-          {
-            "specversion": "1.0",
-            "type": "user.created",
-            "id": "evt_1",
-            "source": "urn:auth0:tenant.example.auth0.com",
-            "a0tenant": "tenant_fixture",
-            "a0stream": "est_fixture",
-            "time": "2026-08-31T09:14:02.117Z",
-            "data": {
-              "object": {
-                "user_id": "auth0|991"
-              }
-            },
-            "bearer_valid": true
-          }
-        ]
+            {
+              "specversion": "1.0",
+              "type": "user.created",
+              "id": "evt_1",
+              "source": "urn:auth0:tenant.example.auth0.com",
+              "a0tenant": "tenant_fixture",
+              "a0stream": "est_fixture",
+              "time": "2026-08-31T09:14:02.117Z",
+              "data": {
+                "object": {
+                  "user_id": "auth0|991"
+                }
+              },
+              "bearer_valid": true
+            }
+          ]
+        }
       },
       "expect": {
         "outcome": "accepted",

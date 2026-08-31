@@ -9,7 +9,7 @@
       "additionalProperties": false,
       "description": "LOWEST-PII handoff. additionalProperties:false plus the propertyNames guard below make an address structurally impossible, so a violation fails CI rather than a code review.",
       "propertyNames": {
-        "not": { "pattern": "(?i)(address|email|phone|msisdn|push_token|recipient|to_addr)" }
+        "not": { "pattern": "([aA][dD][dD][rR][eE][sS][sS]|[eE][mM][aA][iI][lL]|[pP][hH][oO][nN][eE]|[mM][sS][iI][sS][dD][nN]|[pP][uU][sS][hH]_[tT][oO][kK][eE][nN]|[rR][eE][cC][iI][pP][iI][eE][nN][tT]|[tT][oO]_[aA][dD][dD][rR])" }
       },
       "properties": {
         "relay_version": { "const": "2.0.0" },

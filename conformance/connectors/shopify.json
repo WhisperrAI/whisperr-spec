@@ -405,18 +405,20 @@
       "name": "uninstall_then_reinstall_is_clean",
       "proves": "02: uninstall/reinstall leaves no orphans and no duplicates",
       "given": {
-        "inbound": [
-          {
-            "topic": "app/uninstalled",
-            "x_shopify_webhook_id": "b1e8",
-            "hmac_valid": true
-          },
-          {
-            "topic": "app/installed",
-            "x_shopify_webhook_id": "b1e9",
-            "hmac_valid": true
-          }
-        ]
+        "inbound": {
+          "sequence": [
+            {
+              "topic": "app/uninstalled",
+              "x_shopify_webhook_id": "b1e8",
+              "hmac_valid": true
+            },
+            {
+              "topic": "app/installed",
+              "x_shopify_webhook_id": "b1e9",
+              "hmac_valid": true
+            }
+          ]
+        }
       },
       "expect": {
         "outcome": "accepted",

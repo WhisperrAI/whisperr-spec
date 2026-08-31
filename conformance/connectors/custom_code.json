@@ -388,18 +388,20 @@
       "name": "one_event_two_sources_correlates",
       "proves": "01+05: one event MAY have many sources — correlated, not duplicated",
       "given": {
-        "inbound": [
-          {
-            "origin": "custom_code",
-            "occurrence_key": "occ_pf_991",
-            "event_type": "payment_failed"
-          },
-          {
-            "origin": "stripe",
-            "occurrence_key": "occ_pf_991",
-            "event_type": "payment_failed"
-          }
-        ]
+        "inbound": {
+          "sequence": [
+            {
+              "origin": "custom_code",
+              "occurrence_key": "occ_pf_991",
+              "event_type": "payment_failed"
+            },
+            {
+              "origin": "stripe",
+              "occurrence_key": "occ_pf_991",
+              "event_type": "payment_failed"
+            }
+          ]
+        }
       },
       "expect": {
         "outcome": "correlated",
@@ -440,24 +442,26 @@
       "name": "anonymous_then_identify_promotes_explicitly",
       "proves": "03: anonymous → identified only via an explicit verified transition",
       "given": {
-        "inbound": [
-          {
-            "endpoint": "/v1/events/track",
-            "body": {
-              "event_type": "page_viewed",
-              "context": {
-                "$message_id": "a5"
-              }
+        "inbound": {
+          "sequence": [
+            {
+              "endpoint": "/v1/events/track",
+              "body": {
+                "event_type": "page_viewed",
+                "context": {
+                  "$message_id": "a5"
+                }
+              },
+              "anonymous": true
             },
-            "anonymous": true
-          },
-          {
-            "endpoint": "/v1/identify",
-            "body": {
-              "external_user_id": "user_8842"
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_8842"
+              }
             }
-          }
-        ]
+          ]
+        }
       },
       "expect": {
         "outcome": "accepted",

@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
 """whisperr-spec validator.
 
-Dependency-free (stdlib only) so CI needs no install step. It checks the structural
+Runs JSON Schema compilation/validation first, then checks the cross-field
 invariants that the JSON Schemas cannot express on their own — most importantly the
 capability-honesty rule from contracts/02: a connector may not declare a capability its
 fixtures do not demonstrate.
 
 Run:  python3 validate.py
 """
-import glob, json, os, re, sys
+import glob, json, os, re, sys, subprocess
+
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+try:
+    schema_result = subprocess.run(["node", "validate-schemas.mjs"], check=False)
+except OSError:
+    sys.exit("Schema validation requires Node.js and npm ci; it cannot be skipped.")
+if schema_result.returncode:
+    sys.exit(schema_result.returncode)
 
 ERRORS = []
 DEBT = []
@@ -167,7 +175,7 @@ if payload.get("additionalProperties") is not False:
     err("schemas/relay.schema.json", "payload must set additionalProperties:false")
 guard = payload.get("propertyNames", {}).get("not", {}).get("pattern", "")
 for word in ("address", "email", "phone", "push_token"):
-    if word not in guard:
+    if not all(re.search(guard, spelling) for spelling in (word, word.upper(), word.title())):
         err("schemas/relay.schema.json", f"payload propertyNames guard must forbid {word!r} (contracts/07)")
 
 # ---------------------------------------------------------------- report

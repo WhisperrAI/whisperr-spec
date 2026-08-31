@@ -13,9 +13,24 @@ Start at [`contracts/00-overview.md`](contracts/00-overview.md).
 
 [`conformance/connectors/`](conformance/connectors) holds one fixture file per planned connector
 (Supabase, Clerk, Auth0, Stripe, RevenueCat, Shopify, WooCommerce, Segment, GA, Mixpanel,
-Amplitude, and custom code via MCP / PR agent / CLI). `python3 validate.py` enforces the
-structural rules the JSON Schemas cannot — above all the **capability-honesty rule**: a
-connector may not declare a capability its fixtures do not demonstrate.
+Amplitude, and custom code via MCP / PR agent / CLI). `python3 validate.py` first
+compiles every JSON Schema (including exported definitions) with Ajv and validates
+every fixture against its declared schema, resolving references only from this
+checkout. It then checks supplemental cross-field consistency, including whether
+each declared capability has a corresponding fixture assertion. An assertion is
+not evidence that its described behavior has executed successfully.
+
+Local validation requires Node.js 22+, Python 3, and the pinned npm dependencies:
+
+```sh
+npm ci
+npm test
+python3 validate.py
+```
+
+CI runs the same checks. The validator regression suite deliberately introduces
+invalid enums, types, references, required fields, and regular expressions and
+requires them to fail. Multi-delivery scenarios use `given.inbound.sequence`.
 
 RevenueCat is explicitly deferred; its fixture remains as future work and is not
 a release blocker. The validator checks fixture structure and internal consistency,
