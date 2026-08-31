@@ -31,8 +31,9 @@ SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md
   semantics for auth failures, transient retry exhaustion, permanent client
   errors, queue retention, and stable retry ids.
 - [`conformance/push.json`](conformance/push.json) — canonical push-token
-  capture flows (`setPushToken`: partial re-identify, rotation, dedup,
-  buffer-until-identify) for the SDKs that expose them.
+  capture flows (`setPushToken` / `identify(pushToken:)`: partial re-identify,
+  rotation opt-out, dedup across restart-then-reidentify, buffer-until-identify,
+  empty-token no-op, and `reset` re-registration) for the SDKs that expose them.
 - [`schemas/`](schemas) — JSON Schemas for the conformance fixtures.
 
 SDK tests default to the published fixtures:

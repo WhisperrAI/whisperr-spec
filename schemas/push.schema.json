@@ -42,12 +42,16 @@
         "identify": {
           "type": "object",
           "required": ["externalUserId"],
+          "additionalProperties": false,
           "properties": {
-            "externalUserId": { "type": "string", "minLength": 1 }
+            "externalUserId": { "type": "string", "minLength": 1 },
+            "traits": { "type": "object" },
+            "pushToken": { "type": "string" }
           }
         },
-        "setPushToken": { "type": "string", "minLength": 1 },
-        "restart": { "const": true }
+        "setPushToken": { "type": "string" },
+        "restart": { "const": true },
+        "reset": { "const": true }
       }
     }
   }
