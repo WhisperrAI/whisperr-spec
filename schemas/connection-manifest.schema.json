@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/connection-manifest.schema.json",
+  "title": "Whisperr source connection manifest 2.0.0",
+  "type": "object",
+  "required": ["manifest_version", "provider", "display_name", "family", "environments", "auth", "capabilities", "health", "lifecycle", "kill_switch", "version"],
+  "additionalProperties": false,
+  "properties": {
+    "manifest_version": { "const": "2.0.0" },
+    "provider": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "display_name": { "type": "string", "minLength": 1 },
+    "family": { "enum": ["auth", "billing", "commerce", "database", "analytics", "cdp", "custom_code"] },
+    "environments": { "type": "array", "minItems": 1, "items": { "enum": ["production", "staging", "development"] } },
+    "auth": {
+      "type": "object",
+      "required": ["mode", "credential_kinds"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["oauth", "signed_webhook", "api_key", "plugin_pairing", "none"] },
+        "credential_kinds": {
+          "type": "array", "minItems": 1,
+          "items": { "$ref": "#/$defs/credential_kind" }
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["scope", "required", "why"],
+            "additionalProperties": false,
+            "properties": {
+              "scope": { "type": "string" },
+              "required": { "type": "boolean" },
+              "why": { "type": "string", "minLength": 1, "description": "Least privilege is justified per scope, or the scope does not ship." }
+            }
+          }
+        },
+        "never_requests": {
+          "type": "array", "items": { "type": "string" },
+          "description": "Positive commitment, fixture-checked: none of these appears in any authorization request."
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["live_stream", "history", "identity", "catalog", "delivery"],
+      "additionalProperties": false,
+      "properties": {
+        "live_stream": { "type": "boolean" },
+        "history": { "type": "boolean" },
+        "identity": { "oneOf": [{ "$ref": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/identity.schema.json#/$defs/authority_mode" }, { "const": "none" }] },
+        "catalog": { "type": "boolean" },
+        "delivery": { "type": "boolean" }
+      }
+    },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "occurrence_key_template": { "type": ["string", "null"], "description": "null = this connector cannot derive a stable occurrence key; its events are never correlated." }
+      }
+    },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "catalog_threshold_seconds": { "type": "integer", "minimum": 1, "description": "Past this, catalog availability becomes 'unknown' automatically." }
+      }
+    },
+    "health": {
+      "type": "object",
+      "required": ["signals"],
+      "additionalProperties": false,
+      "properties": {
+        "signals": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "degraded_when": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "required": ["disconnect", "revocation", "recovery", "replay"],
+      "additionalProperties": false,
+      "description": "All four are REQUIRED true by the launch gate (PROGRAM.md §8).",
+      "properties": {
+        "disconnect": { "const": true },
+        "revocation": { "const": true },
+        "recovery": { "const": true },
+        "replay": { "const": true },
+        "uninstall_signal": { "type": ["string", "null"] },
+        "scope_change_signal": { "type": ["string", "null"] }
+      }
+    },
+    "kill_switch": { "type": "string", "pattern": "^provider\\.[a-z][a-z0-9_]*$" },
+    "version": { "type": "string" }
+  },
+  "$defs": {
+    "credential_kind": {
+      "enum": ["publishable_ingestion_key", "server_ingestion_key", "mcp_credential", "oauth_token", "provider_secret", "delivery_credential"],
+      "description": "Enforced at issuance AND at use. An mcp_credential must never be usable as an ingestion or provider credential."
+    }
+  }
+}

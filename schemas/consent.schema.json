@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/consent.schema.json",
+  "title": "Whisperr consent assertion 2.0.0",
+  "$defs": {
+    "assertion": {
+      "type": "object",
+      "required": ["channel", "status", "basis", "source", "asserted_at"],
+      "additionalProperties": false,
+      "properties": {
+        "channel": { "enum": ["email", "sms", "push"] },
+        "status": {
+          "enum": ["opted_in", "opted_out", "unknown"],
+          "description": "unknown is the DEFAULT for every (user, channel) pair and BLOCKS delivery. Absence of an opt-out is not consent."
+        },
+        "basis": {
+          "enum": ["explicit_user_action", "customer_declared", "imported_record"],
+          "description": "The only three legitimate origins. Consent is NEVER derived from login, payment, purchase, or the mere presence of an address."
+        },
+        "source": {
+          "type": "object",
+          "required": ["connection_id", "provider"],
+          "additionalProperties": false,
+          "properties": {
+            "connection_id": { "type": "string" },
+            "provider": { "type": "string" }
+          }
+        },
+        "asserted_at": { "type": "string" },
+        "evidence_ref": { "type": ["string", "null"], "description": "Customer's own pointer. Never free-text PII." }
+      }
+    }
+  }
+}

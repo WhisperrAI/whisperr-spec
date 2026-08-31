@@ -1,0 +1,332 @@
+{
+  "$schema": "../../schemas/connector-fixture.schema.json",
+  "version": 1,
+  "provider": "stripe",
+  "description": "Stripe connected as a Stripe App via OAuth — never a pasted secret key. resolve_only identity: it can never create a user.",
+  "manifest": {
+    "manifest_version": "2.0.0",
+    "provider": "stripe",
+    "display_name": "Stripe",
+    "family": "billing",
+    "environments": [
+      "production",
+      "development"
+    ],
+    "auth": {
+      "mode": "oauth",
+      "credential_kinds": [
+        "oauth_token",
+        "provider_secret"
+      ],
+      "scopes": [
+        {
+          "scope": "read_only",
+          "required": true,
+          "why": "the exact event matrix below, nothing more"
+        }
+      ],
+      "never_requests": [
+        "rak_write",
+        "secret_key_paste"
+      ]
+    },
+    "capabilities": {
+      "live_stream": true,
+      "history": true,
+      "identity": "resolve_only",
+      "catalog": false,
+      "delivery": false
+    },
+    "correlation": {
+      "occurrence_key_template": "stripe:{object}:{object_id}:{type}"
+    },
+    "health": {
+      "signals": [
+        "webhook_receipt_lag",
+        "auth_valid",
+        "error_rate"
+      ],
+      "degraded_when": [
+        "auth_valid == false",
+        "webhook_receipt_lag > 15m"
+      ]
+    },
+    "lifecycle": {
+      "disconnect": true,
+      "revocation": true,
+      "recovery": true,
+      "replay": true
+    },
+    "kill_switch": "provider.stripe",
+    "version": "1"
+  },
+  "cases": [
+    {
+      "name": "payment_failed_resolves_existing_user",
+      "proves": "03: a resolve_only source attaches to an EXISTING link",
+      "given": {
+        "inbound": {
+          "type": "invoice.payment_failed",
+          "id": "evt_1P9xKl2eZvKYlo2C",
+          "data": {
+            "object": {
+              "id": "in_1P9x",
+              "customer": "cus_Nffr",
+              "amount_due": 4900,
+              "currency": "eur"
+            }
+          },
+          "created": "2026-08-31T09:14:02.117Z",
+          "signature_valid": true
+        },
+        "state": {
+          "existing_link": {
+            "provider": "stripe",
+            "source_subject_id": "cus_Nffr",
+            "customer_stable_id": "user_8842"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "mode": "live",
+          "event": {
+            "code": "payment_failed",
+            "properties": {
+              "amount_minor": 4900,
+              "currency": "EUR"
+            }
+          },
+          "subject": {
+            "authority": "resolve_only",
+            "source_subject_id": "cus_Nffr",
+            "customer_stable_id": "user_8842",
+            "resolution": "resolved"
+          },
+          "origin": {
+            "provider": "stripe",
+            "source_kind": "webhook",
+            "provider_event_id": "evt_1P9xKl2eZvKYlo2C"
+          },
+          "correlation": {
+            "occurrence_key": "stripe:invoice:in_1P9x:invoice.payment_failed"
+          }
+        },
+        "identity": {
+          "creates_user": false
+        }
+      },
+      "demonstrates_capabilities": [
+        "live_stream",
+        "identity"
+      ]
+    },
+    {
+      "name": "unknown_customer_never_creates_a_user",
+      "proves": "03: resolve_only can NEVER create a user — the highest-value negative in the program",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "invoice.payment_failed",
+          "id": "evt_1P9y",
+          "data": {
+            "object": {
+              "customer": "cus_UNKNOWN"
+            }
+          },
+          "signature_valid": true
+        },
+        "state": {
+          "existing_link": null
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "subject": {
+            "resolution": "unresolved",
+            "customer_stable_id": null
+          }
+        },
+        "identity": {
+          "creates_user": false
+        },
+        "notes": "The event is retained with no user. A shadow user here would later collide with the real one — this is the corruption this mode exists to prevent."
+      }
+    },
+    {
+      "name": "event_outside_the_matrix_is_ignored",
+      "proves": "02: an exact event matrix, never 'all Stripe events'",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "radar.early_fraud_warning.created",
+          "id": "evt_1P9z",
+          "signature_valid": true
+        },
+        "state": {
+          "event_matrix": [
+            "invoice.payment_failed",
+            "invoice.payment_succeeded",
+            "customer.subscription.deleted",
+            "customer.subscription.updated",
+            "charge.refunded"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "ignored",
+        "notes": "Ignored, not errored. Subscribing to everything is how a connector becomes unauditable."
+      }
+    },
+    {
+      "name": "duplicate_event_id_is_idempotent",
+      "proves": "01: idempotency is per (connection, provider_event_id)",
+      "given": {
+        "inbound": {
+          "type": "invoice.payment_failed",
+          "id": "evt_1P9xKl2eZvKYlo2C",
+          "signature_valid": true,
+          "delivery_ordinal": 2
+        },
+        "state": {
+          "already_ingested": [
+            "con_stripe:evt_1P9xKl2eZvKYlo2C"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "deduplicated"
+      }
+    },
+    {
+      "name": "payment_creates_no_consent",
+      "proves": "04: consent is never inferred from a payment",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "invoice.payment_succeeded",
+          "id": "evt_1PA0",
+          "data": {
+            "object": {
+              "customer": "cus_Nffr",
+              "customer_email": "ada@example.com"
+            }
+          },
+          "signature_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": [],
+        "notes": "customer_email is present in the payload and produces NO assertion. It is not even stored unless Whisperr performs delivery."
+      }
+    },
+    {
+      "name": "invalid_signature_rejected",
+      "proves": "09: rejection precedes any durable write",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "invoice.payment_failed",
+          "id": "evt_1PA1",
+          "signature_valid": false
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "rejection_code": "signature_invalid"
+      }
+    },
+    {
+      "name": "payload_minimized_before_storage",
+      "proves": "01+F13: only the allowlisted projection is durably stored",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "invoice.payment_failed",
+          "id": "evt_1PA2",
+          "data": {
+            "object": {
+              "customer": "cus_Nffr",
+              "amount_due": 4900,
+              "currency": "eur",
+              "customer_address": {
+                "line1": "12 Rue de Rivoli",
+                "city": "Paris"
+              },
+              "payment_method_details": {
+                "card": {
+                  "last4": "4242"
+                }
+              }
+            }
+          },
+          "signature_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event": {
+            "properties": {
+              "amount_minor": 4900,
+              "currency": "EUR"
+            }
+          }
+        },
+        "notes": "customer_address and card details are dropped BEFORE the durable write, not filtered on read."
+      }
+    },
+    {
+      "name": "oauth_revocation_degrades_this_provider_only",
+      "proves": "02+08: one provider's failure never affects another",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "oauth_revoked": true
+        },
+        "state": {
+          "other_connections": [
+            "con_clerk",
+            "con_shopify"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "coverage": {
+          "capability": "live_stream",
+          "state": "wired",
+          "label": "needs_attention",
+          "smallest_repair_action": "Reconnect Stripe — authorization was revoked."
+        },
+        "notes": "con_clerk and con_shopify are asserted UNAFFECTED. Isolation is a test, not an aspiration."
+      }
+    },
+    {
+      "name": "historical_import_never_live",
+      "proves": "08: history never displays as live coverage",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "import": "invoices",
+          "range": "2025-01-01..2026-08-01",
+          "historical": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "coverage": {
+          "capability": "history",
+          "state": "validated",
+          "label": "historical"
+        }
+      },
+      "demonstrates_capabilities": [
+        "history"
+      ]
+    }
+  ]
+}

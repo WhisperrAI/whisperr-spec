@@ -1,0 +1,196 @@
+{
+  "$schema": "../../schemas/connector-fixture.schema.json",
+  "version": 1,
+  "provider": "amplitude",
+  "description": "Amplitude: declares its REAL capabilities. Vocabulary discovery and historical import — no live stream. Replaces the mocked connector in whisperr-watch/src/services/integrations.ts.",
+  "manifest": {
+    "manifest_version": "2.0.0",
+    "provider": "amplitude",
+    "display_name": "Amplitude",
+    "family": "analytics",
+    "environments": [
+      "production",
+      "development"
+    ],
+    "auth": {
+      "mode": "oauth",
+      "credential_kinds": [
+        "oauth_token"
+      ],
+      "scopes": [
+        {
+          "scope": "export",
+          "required": true,
+          "why": "event vocabulary and historical export"
+        }
+      ],
+      "never_requests": [
+        "scim.write"
+      ]
+    },
+    "capabilities": {
+      "live_stream": false,
+      "history": true,
+      "identity": "resolve_only",
+      "catalog": false,
+      "delivery": false
+    },
+    "correlation": {
+      "occurrence_key_template": null
+    },
+    "health": {
+      "signals": [
+        "auth_valid",
+        "last_import_at",
+        "import_error_rate"
+      ],
+      "degraded_when": [
+        "auth_valid == false"
+      ]
+    },
+    "lifecycle": {
+      "disconnect": true,
+      "revocation": true,
+      "recovery": true,
+      "replay": true
+    },
+    "kill_switch": "provider.amplitude",
+    "version": "1"
+  },
+  "cases": [
+    {
+      "name": "vocabulary_discovery",
+      "proves": "02: the connector's real primary value — telling the customer what they already track",
+      "given": {
+        "inbound": {
+          "discover": "event_names"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "notes": "Amplitude tells Whisperr which events exist so the setup checklist can propose mappings. This is capability, not coverage."
+      }
+    },
+    {
+      "name": "historical_import_reaches_validated_only",
+      "proves": "08: history:true reaches validated and carries the historical label",
+      "given": {
+        "inbound": {
+          "import": "events",
+          "range": "2026-01-01..2026-08-01",
+          "historical": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "coverage": {
+          "capability": "history",
+          "state": "validated",
+          "label": "historical"
+        }
+      },
+      "demonstrates_capabilities": [
+        "history"
+      ]
+    },
+    {
+      "name": "never_reports_live_coverage",
+      "proves": "08: a historical-only connection can NEVER reach live",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "import": "events",
+          "historical": true
+        },
+        "state": {
+          "attempt_state": "live"
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "rejection_code": "contract_version_unsupported",
+        "notes": "live_stream is false in the manifest, so no code path may set this capability to live. This is the honesty rule (02, rule 4) — Amplitude imports are not real-time and are never displayed as though they were."
+      }
+    },
+    {
+      "name": "no_live_stream_capability_claimed",
+      "proves": "02: a capability with no demonstrating fixture cannot be declared true",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "manifest_check": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "notes": "CI cross-checks: capabilities.live_stream is false and NO case demonstrates it. A true here with no demonstrating case fails the build."
+      }
+    },
+    {
+      "name": "imported_identity_resolves_only",
+      "proves": "03: analytics ids resolve, they never create",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "import": "events",
+          "user_id": "user_UNKNOWN",
+          "historical": true
+        },
+        "state": {
+          "existing_link": null
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "subject": {
+            "resolution": "unresolved"
+          }
+        },
+        "identity": {
+          "creates_user": false
+        }
+      },
+      "demonstrates_capabilities": [
+        "identity"
+      ]
+    },
+    {
+      "name": "import_creates_no_consent",
+      "proves": "04: an imported record is not an imported permission",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "import": "events",
+          "properties": {
+            "email": "ada@example.com"
+          },
+          "historical": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": [],
+        "notes": "basis:imported_record applies to migrated CONSENT records with a pointer to the original. An analytics property containing an address is not one."
+      }
+    },
+    {
+      "name": "labels_only_shed_mode",
+      "proves": "C2: the pre-agreed scope-shed is a first-class supported mode, not a hack",
+      "given": {
+        "inbound": {
+          "mode": "labels_only"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "coverage": {
+          "capability": "history",
+          "state": "available",
+          "label": "historical"
+        },
+        "notes": "Shed step 2 sets history:false too, leaving capability declaration with no ingestion. The connector still validates against this same fixture file."
+      }
+    }
+  ]
+}

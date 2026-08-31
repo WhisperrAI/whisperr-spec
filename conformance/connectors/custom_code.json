@@ -1,0 +1,476 @@
+{
+  "$schema": "../../schemas/connector-fixture.schema.json",
+  "version": 1,
+  "provider": "custom_code",
+  "description": "The customer's own application, instrumented by an executor: MCP (primary), the hosted PR agent, or the CLI. All three write through the SAME registration revision model and MUST produce byte-identical results — that equivalence is the X20 parity suite.",
+  "manifest": {
+    "manifest_version": "2.0.0",
+    "provider": "custom_code",
+    "display_name": "Your application",
+    "family": "custom_code",
+    "environments": [
+      "production",
+      "development"
+    ],
+    "auth": {
+      "mode": "api_key",
+      "credential_kinds": [
+        "publishable_ingestion_key",
+        "server_ingestion_key",
+        "mcp_credential"
+      ],
+      "scopes": [
+        {
+          "scope": "events:write",
+          "required": true,
+          "why": "SDK ingestion"
+        },
+        {
+          "scope": "registration:write",
+          "required": false,
+          "why": "MCP/PR-agent/CLI event registration"
+        }
+      ],
+      "never_requests": [
+        "provider_oauth_token",
+        "delivery_credential"
+      ]
+    },
+    "capabilities": {
+      "live_stream": true,
+      "history": false,
+      "identity": "authoritative",
+      "catalog": true,
+      "delivery": false
+    },
+    "correlation": {
+      "occurrence_key_template": null
+    },
+    "health": {
+      "signals": [
+        "ingest_rate",
+        "last_event_at",
+        "registration_state",
+        "error_rate"
+      ],
+      "degraded_when": [
+        "last_event_at > 24h"
+      ]
+    },
+    "lifecycle": {
+      "disconnect": true,
+      "revocation": true,
+      "recovery": true,
+      "replay": true
+    },
+    "kill_switch": "provider.custom_code",
+    "version": "1"
+  },
+  "cases": [
+    {
+      "name": "sdk_v1_event_maps_to_envelope",
+      "proves": "10: the shipped v1 wire format needs NO SDK release",
+      "given": {
+        "inbound": {
+          "endpoint": "/v1/events/batch",
+          "body": {
+            "external_user_id": "user_8842",
+            "event_type": "payment_failed",
+            "occurred_at": "2026-08-31T09:14:02.117Z",
+            "properties": {
+              "amount_cents": 4900
+            },
+            "context": {
+              "$message_id": "f7a1-…"
+            }
+          },
+          "auth": "X-API-Key"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "mode": "live",
+          "event": {
+            "code": "payment_failed"
+          },
+          "subject": {
+            "authority": "authoritative",
+            "customer_stable_id": "user_8842",
+            "resolution": "resolved"
+          },
+          "origin": {
+            "provider": "custom_code",
+            "source_kind": "sdk"
+          },
+          "time": {
+            "occurred_at": "2026-08-31T09:14:02.117Z"
+          },
+          "correlation": {
+            "idempotency_key": "f7a1-…"
+          }
+        },
+        "notes": "$message_id → idempotency_key. SPEC.md already requires it to be stable across retries, which is exactly the property the envelope needs."
+      },
+      "demonstrates_capabilities": [
+        "live_stream"
+      ]
+    },
+    {
+      "name": "v1_identify_channels_are_customer_declared_consent",
+      "proves": "04+10: the customer supplying a channel IS an assertion, not an inference",
+      "given": {
+        "inbound": {
+          "endpoint": "/v1/identify",
+          "body": {
+            "external_user_id": "user_8842",
+            "traits": {
+              "plan": "pro"
+            },
+            "channels": [
+              {
+                "channel": "email",
+                "address": "ada@example.com",
+                "opted_in": true
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": [
+          {
+            "channel": "email",
+            "status": "opted_in",
+            "basis": "customer_declared",
+            "source": {
+              "connection_id": "con_custom",
+              "provider": "custom_code"
+            }
+          }
+        ],
+        "notes": "Contrast with every webhook-observed address in this suite, which produces no assertion at all."
+      }
+    },
+    {
+      "name": "missing_mode_defaults_to_live",
+      "proves": "10: a v1 event with no $mode is live",
+      "given": {
+        "inbound": {
+          "endpoint": "/v1/events/track",
+          "body": {
+            "external_user_id": "user_8842",
+            "event_type": "trial_started",
+            "context": {
+              "$message_id": "a1"
+            }
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "mode": "live"
+        }
+      }
+    },
+    {
+      "name": "test_mode_event_is_isolated",
+      "proves": "01+08: a test event proves the path and touches nothing in production",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "endpoint": "/v1/events/track",
+          "body": {
+            "external_user_id": "user_NEW",
+            "event_type": "trial_started",
+            "context": {
+              "$message_id": "a2",
+              "$mode": "test"
+            }
+          }
+        }
+      },
+      "expect": {
+        "outcome": "suppressed",
+        "envelope": {
+          "mode": "test"
+        },
+        "identity": {
+          "creates_user": false
+        },
+        "coverage": {
+          "capability": "live_stream",
+          "state": "validated",
+          "advanced_by_mode": "test"
+        },
+        "quarantine": {
+          "disposition": "suppressed",
+          "code": "test_mode",
+          "replayable": false
+        },
+        "notes": "Asserted individually: no user created, no state change, no intervention evaluated, no delivery generated, no analytics contribution, coverage advanced to at most validated."
+      }
+    },
+    {
+      "name": "unregistered_event_code_quarantines",
+      "proves": "05: an event code with no committed revision is not ingestible",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "endpoint": "/v1/events/track",
+          "body": {
+            "external_user_id": "user_8842",
+            "event_type": "totally_new_thing",
+            "context": {
+              "$message_id": "a3"
+            }
+          }
+        },
+        "state": {
+          "committed_codes": [
+            "payment_failed",
+            "trial_started"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "quarantined",
+        "quarantine": {
+          "disposition": "quarantined",
+          "code": "unregistered_event_code",
+          "replayable": true,
+          "smallest_repair_action": "Register totally_new_thing, or map it to an existing event code."
+        },
+        "notes": "Not a silent accept, and not a 500. It auto-registers nothing."
+      }
+    },
+    {
+      "name": "mcp_credential_rejected_on_ingestion",
+      "proves": "02: credential kinds are enforced at USE, not by convention",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "endpoint": "/v1/events/track",
+          "auth": "mcp_credential",
+          "body": {
+            "external_user_id": "user_8842",
+            "event_type": "trial_started",
+            "context": {
+              "$message_id": "a4"
+            }
+          }
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "rejection_code": "signature_invalid",
+        "notes": "An mcp_credential must NEVER be usable as an ingestion or provider credential. The reverse case — an ingestion key on an MCP tool call — is also rejected."
+      }
+    },
+    {
+      "name": "mcp_credential_rejected_on_provider_endpoint",
+      "proves": "02: MCP never receives a general-purpose provider credential",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "endpoint": "/v1/connections/con_stripe/authorize",
+          "auth": "mcp_credential"
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "rejection_code": "signature_invalid",
+        "notes": "MCP may CREATE a provider authorization link for a human to complete. It never holds the resulting token."
+      }
+    },
+    {
+      "name": "failed_revision_leaves_zero_events",
+      "proves": "05: revision commit is atomic",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "revision": {
+            "state": "validating",
+            "events": [
+              {
+                "code": "a_one"
+              },
+              {
+                "code": "a_two"
+              },
+              {
+                "code": "a_three"
+              }
+            ]
+          },
+          "crash_after_event": 2
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "notes": "Crash-injection. The revision resolves to exactly failed or committed — never a partial. Zero events, zero mappings on failure."
+      }
+    },
+    {
+      "name": "executor_parity_mcp_pr_agent_cli",
+      "proves": "05+X20: all executors produce byte-identical revisions for identical input",
+      "given": {
+        "inbound": {
+          "parity_input": "sample-application",
+          "executors": [
+            "mcp",
+            "pr_agent",
+            "cli"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "notes": "The X20 parity suite runs the shared playbook — inspect repo, fetch requirements, locate positions, propose, install SDK, minimal payloads, explicit identity links, run tests, isolated validation events, gap report, repair, commit registration, report — through each executor and diffs the committed revisions. created_by.executor differs; NOTHING else may."
+      }
+    },
+    {
+      "name": "wizard_revision_is_indistinguishable",
+      "proves": "X20: the wizard is a bootstrap shell with no separate event semantics",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "parity_input": "sample-application",
+          "executors": [
+            "wizard",
+            "mcp"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "notes": "The wizard has no gap logic, no readiness, and no event semantics of its own. Its revision differs from MCP's only in created_by.executor."
+      }
+    },
+    {
+      "name": "event_id_preserved_across_revisions",
+      "proves": "05: a revision changes a definition, never an identity",
+      "given": {
+        "inbound": {
+          "revision": {
+            "parent_revision_id": "rev_1",
+            "events": [
+              {
+                "code": "payment_failed",
+                "payload_schema": {
+                  "properties": {
+                    "amount_minor": {},
+                    "currency": {}
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "state": {
+          "existing_event": {
+            "code": "payment_failed",
+            "event_id": "aev_7Yk2"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event_id": "aev_7Yk2"
+        },
+        "notes": "Also holds across the F10 backfill of wizard-created events."
+      }
+    },
+    {
+      "name": "one_event_two_sources_correlates",
+      "proves": "01+05: one event MAY have many sources — correlated, not duplicated",
+      "given": {
+        "inbound": [
+          {
+            "origin": "custom_code",
+            "occurrence_key": "occ_pf_991",
+            "event_type": "payment_failed"
+          },
+          {
+            "origin": "stripe",
+            "occurrence_key": "occ_pf_991",
+            "event_type": "payment_failed"
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "correlated",
+        "notes": "ONE canonical event with two source bindings. Note the idempotency keys differ (they are per-connection) — that is deliberate, so two connections observing the same fact correlate instead of deduping each other into silence."
+      }
+    },
+    {
+      "name": "custom_catalog_publishing",
+      "proves": "06: a customer may publish a catalog through the SDK/API",
+      "given": {
+        "inbound": {
+          "endpoint": "/v1/catalog/items",
+          "body": {
+            "source_item_id": "plan_pro",
+            "type": "plan",
+            "name": "Pro",
+            "availability": "available",
+            "price": {
+              "amount_minor": 4900,
+              "currency": "EUR"
+            }
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "catalog": {
+          "type": "plan",
+          "name": "Pro",
+          "availability": "available"
+        }
+      },
+      "demonstrates_capabilities": [
+        "catalog"
+      ]
+    },
+    {
+      "name": "anonymous_then_identify_promotes_explicitly",
+      "proves": "03: anonymous → identified only via an explicit verified transition",
+      "given": {
+        "inbound": [
+          {
+            "endpoint": "/v1/events/track",
+            "body": {
+              "event_type": "page_viewed",
+              "context": {
+                "$message_id": "a5"
+              }
+            },
+            "anonymous": true
+          },
+          {
+            "endpoint": "/v1/identify",
+            "body": {
+              "external_user_id": "user_8842"
+            }
+          }
+        ]
+      },
+      "expect": {
+        "outcome": "accepted",
+        "identity": {
+          "authority": "anonymous_capable",
+          "promoted_by": "identify",
+          "creates_user": true
+        },
+        "notes": "The SDK's existing identify() backfill IS the explicit verified transition. No retroactive linking across two different anonymous handles."
+      },
+      "demonstrates_capabilities": [
+        "identity"
+      ]
+    }
+  ]
+}

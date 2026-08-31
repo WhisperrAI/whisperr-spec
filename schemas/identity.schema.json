@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/identity.schema.json",
+  "title": "Whisperr identity authority 2.0.0",
+  "$defs": {
+    "authority_mode": {
+      "enum": ["authoritative", "namespace_authoritative", "resolve_only", "anonymous_capable"],
+      "description": "authoritative: may create links. namespace_authoritative: may create links inside its own namespace only, never overrides authoritative. resolve_only: may NEVER create a link. anonymous_capable: anonymous handle only, promoted solely by explicit verified transition."
+    },
+    "identity_link": {
+      "type": "object",
+      "required": ["connection_id", "authority", "source_subject_id", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "connection_id": { "type": "string", "minLength": 1 },
+        "authority": { "$ref": "#/$defs/authority_mode" },
+        "source_subject_id": { "type": "string", "minLength": 1 },
+        "customer_stable_id": { "type": ["string", "null"] },
+        "status": { "enum": ["active", "quarantined", "revoked"] },
+        "established_at": { "type": "string" }
+      }
+    },
+    "stored_user_projection": {
+      "description": "The MAXIMUM Whisperr stores about a customer's user. Nothing outside this.",
+      "type": "object",
+      "required": ["internal_id", "customer_stable_id", "links", "consent"],
+      "additionalProperties": false,
+      "properties": {
+        "internal_id": { "type": "string" },
+        "customer_stable_id": { "type": "string" },
+        "links": { "type": "array", "items": { "$ref": "#/$defs/identity_link" } },
+        "display_name": { "type": ["string", "null"], "description": "Optional. All copy must render without it." },
+        "approved_traits": { "type": "object", "description": "Explicit per-app allowlist only." },
+        "consent": { "type": "array", "items": { "$ref": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/consent.schema.json#/$defs/assertion" } },
+        "channel_addresses": {
+          "type": "array",
+          "description": "Present ONLY when Whisperr performs delivery. Encrypted at rest.",
+          "items": {
+            "type": "object",
+            "required": ["channel", "address_ciphertext", "key_version"],
+            "additionalProperties": false,
+            "properties": {
+              "channel": { "enum": ["email", "sms", "push"] },
+              "address_ciphertext": { "type": "string" },
+              "key_version": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

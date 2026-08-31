@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/relay.schema.json",
+  "title": "Whisperr delivery relay 2.0.0",
+  "$defs": {
+    "payload": {
+      "type": "object",
+      "required": ["relay_version", "message_id", "intervention_id", "customer_user_id", "channel", "content", "idempotency_key", "expires_at"],
+      "additionalProperties": false,
+      "description": "LOWEST-PII handoff. additionalProperties:false plus the propertyNames guard below make an address structurally impossible, so a violation fails CI rather than a code review.",
+      "propertyNames": {
+        "not": { "pattern": "(?i)(address|email|phone|msisdn|push_token|recipient|to_addr)" }
+      },
+      "properties": {
+        "relay_version": { "const": "2.0.0" },
+        "message_id": { "type": "string", "minLength": 1 },
+        "intervention_id": { "type": "string", "minLength": 1 },
+        "customer_user_id": { "type": "string", "minLength": 1, "description": "The CUSTOMER's own user id. Whisperr never resolves it to an address on this path." },
+        "channel": { "enum": ["email", "sms", "push"] },
+        "content": {
+          "oneOf": [
+            {
+              "type": "object", "required": ["rendered"], "additionalProperties": false,
+              "properties": { "rendered": { "type": "object" } }
+            },
+            {
+              "type": "object", "required": ["structured"], "additionalProperties": false,
+              "properties": { "structured": { "type": "object" } }
+            }
+          ]
+        },
+        "idempotency_key": { "type": "string", "minLength": 1 },
+        "expires_at": { "type": "string" },
+        "attribution": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "intervention_code": { "type": "string" },
+            "reason_code": { "type": "string" }
+          }
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "required": ["message_id", "status", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "message_id": { "type": "string" },
+        "status": { "enum": ["accepted", "delivered", "failed", "suppressed"] },
+        "at": { "type": "string" },
+        "reason_code": { "type": ["string", "null"], "description": "REQUIRED for failed and suppressed. Drawn from the taxonomy in contract 09." }
+      },
+      "allOf": [{
+        "if": { "properties": { "status": { "enum": ["failed", "suppressed"] } }, "required": ["status"] },
+        "then": { "required": ["reason_code"], "properties": { "reason_code": { "type": "string", "minLength": 1 } } }
+      }]
+    }
+  }
+}

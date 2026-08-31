@@ -1,0 +1,239 @@
+{
+  "$schema": "../../schemas/connector-fixture.schema.json",
+  "version": 1,
+  "provider": "segment",
+  "description": "Segment: the preferred operational connection for customers already routing events through it. resolve_only userId — it resolves, it never merges. Volume controls are mandatory.",
+  "manifest": {
+    "manifest_version": "2.0.0",
+    "provider": "segment",
+    "display_name": "Segment",
+    "family": "cdp",
+    "environments": [
+      "production",
+      "development"
+    ],
+    "auth": {
+      "mode": "signed_webhook",
+      "credential_kinds": [
+        "provider_secret"
+      ],
+      "scopes": [
+        {
+          "scope": "webhook_destination",
+          "required": true,
+          "why": "receive the customer's event stream"
+        }
+      ],
+      "never_requests": [
+        "workspace_admin"
+      ]
+    },
+    "capabilities": {
+      "live_stream": true,
+      "history": false,
+      "identity": "resolve_only",
+      "catalog": false,
+      "delivery": false
+    },
+    "correlation": {
+      "occurrence_key_template": "segment:{messageId}"
+    },
+    "health": {
+      "signals": [
+        "receipt_lag",
+        "signature_valid",
+        "quota_utilisation",
+        "backpressure_active",
+        "excluded_family_rate"
+      ],
+      "degraded_when": [
+        "signature_valid == false",
+        "quota_utilisation > 0.95"
+      ]
+    },
+    "lifecycle": {
+      "disconnect": true,
+      "revocation": true,
+      "recovery": true,
+      "replay": true
+    },
+    "kill_switch": "provider.segment",
+    "version": "1"
+  },
+  "cases": [
+    {
+      "name": "track_event_resolves_existing_user",
+      "proves": "03: Segment userId RESOLVES",
+      "given": {
+        "inbound": {
+          "type": "track",
+          "messageId": "seg_1",
+          "userId": "user_8842",
+          "event": "Trial Started",
+          "timestamp": "2026-08-31T09:14:02.117Z",
+          "signature_valid": true
+        },
+        "state": {
+          "existing_link": {
+            "customer_stable_id": "user_8842"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "mode": "live",
+          "event": {
+            "code": "trial_started"
+          },
+          "subject": {
+            "authority": "resolve_only",
+            "customer_stable_id": "user_8842",
+            "resolution": "resolved"
+          },
+          "origin": {
+            "provider": "segment",
+            "source_kind": "webhook"
+          }
+        }
+      },
+      "demonstrates_capabilities": [
+        "live_stream",
+        "identity"
+      ]
+    },
+    {
+      "name": "unknown_userid_never_creates_or_merges",
+      "proves": "03: Segment userId resolves but NEVER silently merges",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "track",
+          "messageId": "seg_2",
+          "userId": "user_UNKNOWN",
+          "event": "Trial Started",
+          "signature_valid": true
+        },
+        "state": {
+          "existing_link": null
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "subject": {
+            "resolution": "unresolved"
+          }
+        },
+        "identity": {
+          "creates_user": false
+        },
+        "notes": "Customers route heterogeneous identities through Segment. This is exactly why it is resolve_only."
+      }
+    },
+    {
+      "name": "identify_traits_do_not_create_consent",
+      "proves": "04: a trait containing an address is not consent",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "identify",
+          "messageId": "seg_3",
+          "userId": "user_8842",
+          "traits": {
+            "email": "ada@example.com",
+            "plan": "pro"
+          },
+          "signature_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": [],
+        "notes": "Only allowlisted traits are stored. 'email' present in traits is an address, not permission."
+      }
+    },
+    {
+      "name": "whisperr_family_events_are_excluded",
+      "proves": "S33: family exclusions prevent Whisperr's own events looping back in",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "track",
+          "messageId": "seg_4",
+          "userId": "user_8842",
+          "event": "Whisperr Message Delivered",
+          "context": {
+            "library": {
+              "name": "whisperr"
+            }
+          },
+          "signature_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "ignored",
+        "notes": "Without this, every delivered message would re-enter as an event and compound."
+      }
+    },
+    {
+      "name": "volume_spike_applies_backpressure_without_loss",
+      "proves": "09: acknowledged deliveries are never dropped, even under quota pressure",
+      "given": {
+        "inbound": {
+          "burst": 50000,
+          "window_seconds": 60,
+          "signature_valid": true
+        },
+        "state": {
+          "quota_per_minute": 10000
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "quarantine": {
+          "disposition": "retrying",
+          "code": "rate_limited",
+          "replayable": true
+        },
+        "notes": "Durable async + backpressure. Every acknowledged delivery still ends in exactly one disposition — none are dropped to shed load."
+      }
+    },
+    {
+      "name": "duplicate_messageid_is_idempotent",
+      "proves": "01: at-least-once collapses on messageId",
+      "given": {
+        "inbound": {
+          "type": "track",
+          "messageId": "seg_1",
+          "signature_valid": true,
+          "delivery_ordinal": 2
+        },
+        "state": {
+          "already_ingested": [
+            "con_segment:seg_1"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "deduplicated"
+      }
+    },
+    {
+      "name": "invalid_signature_rejected",
+      "proves": "09: rejection precedes persistence",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "track",
+          "messageId": "seg_5",
+          "signature_valid": false
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "rejection_code": "signature_invalid"
+      }
+    }
+  ]
+}
