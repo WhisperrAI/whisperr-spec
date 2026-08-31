@@ -145,12 +145,126 @@
               ],
               "description": "Registration is NOT approval and NOT a working connector. Tracked separately on purpose."
             },
-            "install_mode": {
+            "clients": {
+              "type": "array",
+              "minItems": 1,
+              "description": "One entry per installation mode. Stripe issues a SEPARATE client_id for live, test and sandbox — using the wrong one for a connection's environment fails the install with a confusing error. Modelling it here makes that mistake unwritable. Single-client providers carry one entry with install_mode 'default'. client_id values are public (they appear in the authorize URL a user visits); they are not secrets.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "install_mode",
+                  "client_id"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "install_mode": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Provider's own name for the mode: live | test | sandbox | default."
+                  },
+                  "client_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "environment": {
+                    "oneOf": [
+                      {
+                        "enum": [
+                          "production",
+                          "staging",
+                          "development"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Which connection environment selects this client. null = any."
+                  }
+                }
+              }
+            },
+            "authorize_url_template": {
               "type": [
                 "string",
                 "null"
               ],
-              "description": "e.g. external_test while unpublished."
+              "description": "Verbatim authorize URL with {client_id} and {redirect_uri} placeholders, when the provider does not use a plain /oauth/authorize."
+            },
+            "redirect_uri_operational": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether the callback route is actually deployed and answering. Registered is NOT operational — every one of these is a build target until a connector proves otherwise."
+            }
+          }
+        },
+        "granted_scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "description": "What the REGISTERED provider app actually carries today, verified against the provider — as distinct from `scopes`, which is what the connector needs and justifies. CI compares them in both directions: a required scope that is not granted is an install failure waiting to happen; a granted scope with no justification is over-permissioning and a §7 human-review escalation."
+        },
+        "scope_deltas": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Known, ACKNOWLEDGED differences between what the connector needs and what the registered provider app grants. CI fails on any delta not listed here — so a gap is tracked debt with an owner, not a permanently red build nobody reads.",
+          "properties": {
+            "pending_grant": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "scope",
+                  "closed_by",
+                  "note"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  },
+                  "closed_by": {
+                    "type": "string",
+                    "description": "Task id that amends the provider app."
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "overgranted": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "scope",
+                  "action",
+                  "owner",
+                  "note"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "enum": [
+                      "trim",
+                      "justify",
+                      "accept"
+                    ]
+                  },
+                  "owner": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
             }
           }
         }

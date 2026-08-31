@@ -60,7 +60,43 @@
         "app_identifier": "417240809473",
         "token_exchange": "client_secret",
         "registration_status": "registered_unpublished",
-        "install_mode": null
+        "clients": [
+          {
+            "install_mode": "default",
+            "client_id": "9182e42a56d4cca402f5e3335ba88cd3",
+            "environment": null
+          }
+        ],
+        "authorize_url_template": null,
+        "redirect_uri_operational": false
+      },
+      "granted_scopes": [
+        "read_orders",
+        "read_products"
+      ],
+      "scope_deltas": {
+        "pending_grant": [
+          {
+            "scope": "read_inventory",
+            "closed_by": "S34",
+            "note": "shopify.app.toml requests read_orders,read_products only. Availability checks (the out-of-stock case) need read_inventory. S34 amends the toml and deploys a new draft before any install test."
+          },
+          {
+            "scope": "write_pixels",
+            "closed_by": "S34",
+            "note": "Optional, for the storefront pixel extension. extension_directories is still empty; grant it when the pixel is implemented."
+          },
+          {
+            "scope": "read_customer_events",
+            "closed_by": "S34",
+            "note": "Optional, pairs with write_pixels to receive storefront pixel events."
+          },
+          {
+            "scope": "read_customers",
+            "closed_by": "S34",
+            "note": "Optional in the toml already; listed for completeness so the ledger is the single view of the delta."
+          }
+        ]
       }
     },
     "capabilities": {

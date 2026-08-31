@@ -11,6 +11,7 @@ Run:  python3 validate.py
 import glob, json, os, re, sys
 
 ERRORS = []
+DEBT = []
 def err(where, msg): ERRORS.append(f"{where}: {msg}")
 
 # ---------------------------------------------------------------- 1. everything parses
@@ -86,10 +87,48 @@ for f, d in sorted(docs.items()):
     for sc in requested & never:
         err(f, f"scope {sc!r} is both requested and listed in never_requests")
 
+    # 4c-quater. GRANTED vs JUSTIFIED, both directions.
+    # `scopes` is what the connector needs and justifies; `granted_scopes` is what the registered
+    # provider app actually carries. Under-grant is an install failure waiting to happen;
+    # over-grant is a least-privilege violation and a PROGRAM.md §7 human-review escalation.
+    granted = set(man.get("auth", {}).get("granted_scopes", []))
+    _dl = man.get("auth", {}).get("scope_deltas", {})
+    PENDING = {x["scope"] for x in _dl.get("pending_grant", [])}
+    ACCEPTED = {x["scope"] for x in _dl.get("overgranted", [])}
+    for x in _dl.get("pending_grant", []):
+        DEBT.append((prov, f"pending grant (closed by {x['closed_by']})", x["scope"]))
+    for x in _dl.get("overgranted", []):
+        DEBT.append((prov, f"over-granted ({x['action']} / {x['owner']})", x["scope"]))
+    if granted:
+        for sc in man.get("auth", {}).get("scopes", []):
+            if sc.get("required") and sc["scope"] not in granted and sc["scope"] not in PENDING:
+                err(f, f"scope {sc['scope']!r} is REQUIRED but the registered app does not grant "
+                       f"it and it is not tracked in scope_deltas.pending_grant — installs will "
+                       f"fail. Amend the provider app, drop the requirement, or track it.")
+        for x in sorted(granted - requested - ACCEPTED):
+            err(f, f"registered app grants {x!r} with no entry in auth.scopes and none in "
+                   f"scope_deltas.overgranted — over-permissioned. Justify it, trim the provider "
+                   f"app, or track it. Ambiguous provider permission scope is a §7 carve-out.")
+
     # 4c-ter. a registered OAuth callback must be carried verbatim, and status is not approval
     oauth = man.get("auth", {}).get("oauth")
     if man.get("auth", {}).get("mode") == "oauth" and not oauth:
         err(f, "auth.mode is oauth but no auth.oauth block records the registered callback")
+    if oauth:
+        modes = [c["install_mode"] for c in oauth.get("clients", [])]
+        if len(modes) != len(set(modes)):
+            err(f, "auth.oauth.clients has duplicate install_mode entries")
+        envs = {c.get("environment") for c in oauth.get("clients", [])}
+        if oauth.get("registration_status") == "not_registered":
+            if oauth.get("clients"):
+                err(f, "registration_status is not_registered but OAuth clients are listed")
+        elif not oauth.get("clients"):
+            err(f, "a registered OAuth app must list at least one client in auth.oauth.clients")
+        elif None not in envs:
+            missing = set(man.get("environments", [])) - envs
+            if missing:
+                err(f, f"no OAuth client covers environment(s) {sorted(missing)} — a connection "
+                       f"in that environment has no client_id to authorize with")
     if oauth and oauth.get("registration_status") == "approved":
         err(f, "registration_status 'approved' requires provider review evidence — registration "
                "is not approval; a coordinator sets this, not a worker")
@@ -131,6 +170,12 @@ for word in ("address", "email", "phone", "push_token"):
 if ERRORS:
     print(f"spec validation FAILED ({len(ERRORS)} problem(s)):")
     print("\n".join(f"  - {e}" for e in ERRORS)); sys.exit(1)
+
+if DEBT:
+    print("tracked scope debt — acknowledged, not failures:")
+    for prov, kind, sc in sorted(DEBT):
+        print(f"  ! {prov:<12} {sc:<22} {kind}")
+    print()
 
 ncases = sum(len(d.get("cases", [])) for f, d in docs.items() if f.startswith("conformance/connectors/"))
 print(f"spec OK — {len(docs)} documents, {len(seen)} launch connectors, {ncases} connector cases")

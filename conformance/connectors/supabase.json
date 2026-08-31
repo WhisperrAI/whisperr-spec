@@ -29,6 +29,11 @@
           "why": "read approved tables only"
         },
         {
+          "scope": "database:write",
+          "required": true,
+          "why": "create and maintain the dedicated Whisperr integration schema and its outbox, so customer transactions never depend on Whisperr availability. Setup-scoped: never used to modify customer application tables."
+        },
+        {
           "scope": "auth:read",
           "required": false,
           "why": "Supabase Auth identity links"
@@ -36,15 +41,66 @@
       ],
       "never_requests": [
         "service_role_key",
-        "database:write",
         "secrets:read"
       ],
       "oauth": {
         "redirect_uri": "https://api.whisperr.net/v1/connections/supabase/oauth/callback",
         "app_identifier": null,
         "token_exchange": "client_secret",
-        "registration_status": "not_registered",
-        "install_mode": null
+        "registration_status": "registered_unpublished",
+        "clients": [
+          {
+            "install_mode": "default",
+            "client_id": "c972b3a3-8645-4a65-883e-5614b3f31d9b",
+            "environment": null
+          }
+        ],
+        "authorize_url_template": null,
+        "redirect_uri_operational": false
+      },
+      "granted_scopes": [
+        "database:read",
+        "database:write",
+        "edge_functions:read",
+        "edge_functions:write",
+        "analytics:read",
+        "analytics:write",
+        "projects:read"
+      ],
+      "scope_deltas": {
+        "overgranted": [
+          {
+            "scope": "edge_functions:read",
+            "action": "trim",
+            "owner": "George",
+            "note": "No S30 requirement reads or deploys edge functions. Least privilege: trim from the OAuth app."
+          },
+          {
+            "scope": "edge_functions:write",
+            "action": "trim",
+            "owner": "George",
+            "note": "Write access to customer edge functions is well beyond an observation connector. Trim."
+          },
+          {
+            "scope": "analytics:read",
+            "action": "trim",
+            "owner": "George",
+            "note": "Whisperr derives its own coverage from ingested events; it does not read Supabase analytics. Trim."
+          },
+          {
+            "scope": "analytics:write",
+            "action": "trim",
+            "owner": "George",
+            "note": "Whisperr never writes customer analytics. Trim."
+          }
+        ],
+        "pending_grant": [
+          {
+            "scope": "auth:read",
+            "closed_by": "S30",
+            "note": "S30 requires Supabase Auth as an authoritative identity source, but the registered app grants no auth scope. Either add it, or Supabase Auth identity drops out of scope for launch. Optional today so it does not block; escalated to George."
+          }
+        ]
       }
     },
     "capabilities": {

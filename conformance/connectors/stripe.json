@@ -56,8 +56,33 @@
         "app_identifier": "net.whisperr",
         "token_exchange": "developer_api_key",
         "registration_status": "registered_unpublished",
-        "install_mode": "external_test"
-      }
+        "clients": [
+          {
+            "install_mode": "live",
+            "client_id": "ca_VAmSTNuKJc08cFYdPf4EzvMZvmZo57dz",
+            "environment": "production"
+          },
+          {
+            "install_mode": "test",
+            "client_id": "ca_VAmSjMzvaOq98lw56Je1dXMkWyclBLRV",
+            "environment": "development"
+          },
+          {
+            "install_mode": "sandbox",
+            "client_id": "ca_VAmSpR97eu8O1mUXZDKVvKYssIsSTeKa",
+            "environment": "staging"
+          }
+        ],
+        "authorize_url_template": "https://marketplace.stripe.com/oauth/v2/chnlink_61VJpnv3ALrwIkJas412MZnPq8FGX3zs/authorize?client_id={client_id}&redirect_uri={redirect_uri}",
+        "redirect_uri_operational": false
+      },
+      "granted_scopes": [
+        "event_read",
+        "customer_read",
+        "invoice_read",
+        "subscription_read",
+        "charge_read"
+      ]
     },
     "capabilities": {
       "live_stream": true,
@@ -421,6 +446,31 @@
           }
         },
         "notes": "A real event from a Stripe TEST-mode connection is envelope mode:live — it is a genuine observation of that connection. envelope mode:test is reserved for Whisperr's own isolated validation lane. Collapsing these would either leak sandbox data into production coverage or make real events unprocessable."
+      }
+    },
+    {
+      "name": "install_mode_selects_its_own_client_id",
+      "proves": "02: Stripe issues a separate OAuth client_id per install mode; the connection's environment selects it",
+      "negative": true,
+      "requires_scopes": [
+        "event_read"
+      ],
+      "given": {
+        "inbound": {
+          "authorize_request": true,
+          "connection_environment": "development"
+        },
+        "state": {
+          "available_clients": {
+            "live": "ca_VAmSTNuKJc08cFYdPf4EzvMZvmZo57dz",
+            "test": "ca_VAmSjMzvaOq98lw56Je1dXMkWyclBLRV",
+            "sandbox": "ca_VAmSpR97eu8O1mUXZDKVvKYssIsSTeKa"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "notes": "A development-environment connection MUST build its authorize URL with the `test` client_id. Using the live client_id for a test connection fails the install with an error that does not name the real cause. The manifest's clients[] is the lookup — the connector never hardcodes one. This is the concrete consequence of keeping the connection's environment separate from the envelope's mode (contract 01): the environment axis SELECTS THE CREDENTIAL."
       }
     }
   ]
