@@ -87,6 +87,63 @@ scope column at all right now (`migrations/0001_initial_schema.sql:118`).
 `auth.never_requests` is a positive commitment, fixture-checked. Supabase declares
 `service_role_key` there; Shopify declares its write scopes.
 
+## `auth.oauth` — the registered target, not a proposal
+
+An OAuth connector carries the **actual registered** configuration, so F11's callback framework
+and the connector build the same route the provider will actually redirect to. A mismatch here is
+a silent install failure that only shows up in front of a customer.
+
+```json
+"oauth": {
+  "redirect_uri": "https://api.whisperr.net/v1/connections/stripe/oauth/callback",
+  "app_identifier": "net.whisperr",
+  "token_exchange": "developer_api_key",
+  "registration_status": "registered_unpublished",
+  "install_mode": "external_test"
+}
+```
+
+Route shape for every provider: `https://api.whisperr.net/v1/connections/{provider}/oauth/callback`.
+
+**`token_exchange` is the trap.** Not every provider exchanges a code the same way:
+
+| value | who | note |
+|---|---|---|
+| `client_secret` | Shopify, Supabase, the analytics providers | the familiar OAuth2 shape |
+| `developer_api_key` | **Stripe Apps** | the exchange authenticates with the *developer account's* API key for the installation mode, **not** a Shopify-style app client secret |
+| `provider_specific` | anything else | document it in the connector packet |
+
+Assuming Stripe works like Shopify is the single most likely wiring mistake in the program, which
+is why the manifest states it rather than leaving it to whoever writes the connector.
+
+**`registration_status` is not approval, and not a working connector.** Three separate facts get
+conflated constantly, so they are tracked as three things:
+
+| status | means |
+|---|---|
+| `not_registered` | no provider-side app exists yet |
+| `registered_unpublished` | an app exists; it is not published and not reviewed |
+| `in_review` | submitted to the provider |
+| `approved` | the provider approved it for the launch mode |
+
+A registered app proves nothing about OAuth round trips, webhook processing, or production
+readiness. `approved` is set by the coordinator against provider evidence — CI rejects a worker
+setting it.
+
+## Scopes — honest about what the fixtures need
+
+Every scope carries a `why`, and every fixture case may declare `requires_scopes`. CI fails when a
+case needs a scope the manifest never requests.
+
+This closes a gap that capability honesty alone leaves open: a connector can carry a perfectly
+good demonstrating case for a capability while its **authorization request cannot deliver it**.
+The Shopify storefront pixel is the live example — the pixel case existed before `write_pixels`
+and `read_customer_events` were requested, and the out-of-stock case read inventory without
+`read_inventory`. Both would have passed capability honesty and failed at install.
+
+Finalize scopes against the API calls the connector actually makes, then update the fixture. Not
+the other way around.
+
 ## `capabilities` — the honesty contract
 
 | capability | values | meaning |
@@ -119,3 +176,6 @@ untouched, and that isolation is a fixture case.
 4. A credential of the wrong kind is rejected at use, with a negative fixture proving it.
 5. Nothing in `never_requests` appears in any authorization request the connector builds.
 6. One provider's kill switch affects exactly one provider.
+7. No case requires a scope the manifest does not request.
+8. A requested scope never also appears in `never_requests`.
+9. An OAuth connector carries the registered callback verbatim; `approved` is coordinator-set.

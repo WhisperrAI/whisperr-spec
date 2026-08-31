@@ -71,6 +71,29 @@ for f, d in sorted(docs.items()):
     if ident and ident != "none" and "identity" not in demonstrated:
         err(f, f"declares capabilities.identity={ident!r} but no case demonstrates it")
 
+    # 4c-bis. THE SCOPE-HONESTY RULE — a case may not need a scope the manifest never asks for.
+    # Capability honesty alone is not enough: a connector can carry a demonstrating case for a
+    # capability while its authorization request cannot actually deliver it. That gap is invisible
+    # until an install fails in production.
+    requested = {s["scope"] for s in man.get("auth", {}).get("scopes", [])}
+    if requested:
+        for c in cases:
+            for sc in c.get("requires_scopes", []):
+                if sc not in requested:
+                    err(f, f"case {c['name']!r} requires scope {sc!r} that auth.scopes never "
+                           f"requests (contracts/02 — finalize scopes against real API calls)")
+    never = set(man.get("auth", {}).get("never_requests", []))
+    for sc in requested & never:
+        err(f, f"scope {sc!r} is both requested and listed in never_requests")
+
+    # 4c-ter. a registered OAuth callback must be carried verbatim, and status is not approval
+    oauth = man.get("auth", {}).get("oauth")
+    if man.get("auth", {}).get("mode") == "oauth" and not oauth:
+        err(f, "auth.mode is oauth but no auth.oauth block records the registered callback")
+    if oauth and oauth.get("registration_status") == "approved":
+        err(f, "registration_status 'approved' requires provider review evidence — registration "
+               "is not approval; a coordinator sets this, not a worker")
+
     # 4d. history-only connectors may never reach live coverage
     if caps.get("history") is True and caps.get("live_stream") is False:
         for c in cases:

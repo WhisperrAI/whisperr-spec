@@ -30,16 +30,38 @@
           "why": "catalog projection"
         },
         {
+          "scope": "read_inventory",
+          "required": true,
+          "why": "availability — an out-of-stock item must never be offered"
+        },
+        {
           "scope": "read_customers",
           "required": false,
           "why": "namespace identity links"
+        },
+        {
+          "scope": "write_pixels",
+          "required": false,
+          "why": "install the storefront pixel extension"
+        },
+        {
+          "scope": "read_customer_events",
+          "required": false,
+          "why": "receive storefront pixel events"
         }
       ],
       "never_requests": [
         "write_products",
         "write_orders",
         "write_customers"
-      ]
+      ],
+      "oauth": {
+        "redirect_uri": "https://api.whisperr.net/v1/connections/shopify/oauth/callback",
+        "app_identifier": "417240809473",
+        "token_exchange": "client_secret",
+        "registration_status": "registered_unpublished",
+        "install_mode": null
+      }
     },
     "capabilities": {
       "live_stream": true,
@@ -119,6 +141,9 @@
       },
       "demonstrates_capabilities": [
         "live_stream"
+      ],
+      "requires_scopes": [
+        "read_orders"
       ]
     },
     {
@@ -155,6 +180,9 @@
       },
       "demonstrates_capabilities": [
         "identity"
+      ],
+      "requires_scopes": [
+        "read_customers"
       ]
     },
     {
@@ -175,7 +203,10 @@
       "expect": {
         "outcome": "accepted",
         "consent": []
-      }
+      },
+      "requires_scopes": [
+        "read_orders"
+      ]
     },
     {
       "name": "explicit_marketing_optin_is_an_assertion",
@@ -209,7 +240,10 @@
           }
         ],
         "notes": "The distinction that matters: the shopper acted. Contrast with the purchase case above."
-      }
+      },
+      "requires_scopes": [
+        "read_customers"
+      ]
     },
     {
       "name": "catalog_projection_is_minimized",
@@ -254,6 +288,9 @@
       },
       "demonstrates_capabilities": [
         "catalog"
+      ],
+      "requires_scopes": [
+        "read_products"
       ]
     },
     {
@@ -298,7 +335,11 @@
           "is_candidate": false
         },
         "notes": "Bought monthly for a year. Still not offered, because today it is out of stock."
-      }
+      },
+      "requires_scopes": [
+        "read_products",
+        "read_inventory"
+      ]
     },
     {
       "name": "stale_catalog_becomes_unknown_and_suppresses",
@@ -427,7 +468,11 @@
             "code": "checkout_started"
           }
         }
-      }
+      },
+      "requires_scopes": [
+        "write_pixels",
+        "read_customer_events"
+      ]
     },
     {
       "name": "historical_order_import_never_live",
@@ -451,7 +496,10 @@
           "label": "historical"
         },
         "notes": "live_stream and history are separate capability states on the same connection — importing backfill never advances the live_stream state."
-      }
+      },
+      "requires_scopes": [
+        "read_orders"
+      ]
     }
   ]
 }

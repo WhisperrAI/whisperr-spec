@@ -26,7 +26,14 @@
       ],
       "never_requests": [
         "analytics.edit"
-      ]
+      ],
+      "oauth": {
+        "redirect_uri": "https://api.whisperr.net/v1/connections/google_analytics/oauth/callback",
+        "app_identifier": null,
+        "token_exchange": "client_secret",
+        "registration_status": "not_registered",
+        "install_mode": null
+      }
     },
     "capabilities": {
       "live_stream": false,

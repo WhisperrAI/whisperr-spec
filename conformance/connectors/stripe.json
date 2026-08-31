@@ -20,15 +20,44 @@
       ],
       "scopes": [
         {
-          "scope": "read_only",
+          "scope": "event_read",
           "required": true,
-          "why": "the exact event matrix below, nothing more"
+          "why": "Receive billing lifecycle events to identify relevant retention opportunities in Whisperr."
+        },
+        {
+          "scope": "customer_read",
+          "required": true,
+          "why": "Match Stripe customer identifiers and approved metadata to users in your Whisperr workspace."
+        },
+        {
+          "scope": "invoice_read",
+          "required": true,
+          "why": "Read invoice payment status to identify failed payments and payment recovery."
+        },
+        {
+          "scope": "subscription_read",
+          "required": true,
+          "why": "Read subscription status and lifecycle changes for retention workflows."
+        },
+        {
+          "scope": "charge_read",
+          "required": true,
+          "why": "Read charge and refund status to keep billing outcomes accurate and avoid inappropriate follow-ups."
         }
       ],
       "never_requests": [
-        "rak_write",
+        "any *_write permission",
+        "payment management",
+        "customer_write",
         "secret_key_paste"
-      ]
+      ],
+      "oauth": {
+        "redirect_uri": "https://api.whisperr.net/v1/connections/stripe/oauth/callback",
+        "app_identifier": "net.whisperr",
+        "token_exchange": "developer_api_key",
+        "registration_status": "registered_unpublished",
+        "install_mode": "external_test"
+      }
     },
     "capabilities": {
       "live_stream": true,
@@ -120,6 +149,11 @@
       "demonstrates_capabilities": [
         "live_stream",
         "identity"
+      ],
+      "requires_scopes": [
+        "event_read",
+        "invoice_read",
+        "customer_read"
       ]
     },
     {
@@ -153,7 +187,11 @@
           "creates_user": false
         },
         "notes": "The event is retained with no user. A shadow user here would later collide with the real one — this is the corruption this mode exists to prevent."
-      }
+      },
+      "requires_scopes": [
+        "event_read",
+        "customer_read"
+      ]
     },
     {
       "name": "event_outside_the_matrix_is_ignored",
@@ -177,7 +215,7 @@
       },
       "expect": {
         "outcome": "ignored",
-        "notes": "Ignored, not errored. Subscribing to everything is how a connector becomes unauditable."
+        "notes": "Ignored, not errored. This is the matrix declared at registration; the connector's handlers and the Stripe-side subscriptions must stay equal to it in both directions. Subscribing to everything is how a connector becomes unauditable."
       }
     },
     {
@@ -221,7 +259,11 @@
         "outcome": "accepted",
         "consent": [],
         "notes": "customer_email is present in the payload and produces NO assertion. It is not even stored unless Whisperr performs delivery."
-      }
+      },
+      "requires_scopes": [
+        "event_read",
+        "customer_read"
+      ]
     },
     {
       "name": "invalid_signature_rejected",
@@ -326,7 +368,60 @@
       },
       "demonstrates_capabilities": [
         "history"
+      ],
+      "requires_scopes": [
+        "invoice_read"
       ]
+    },
+    {
+      "name": "customer_stripe_is_not_whisperrs_own_billing",
+      "proves": "02: the customer's Stripe connection and Whisperr's own subscription billing are different systems that must never share a handler",
+      "negative": true,
+      "requires_scopes": [
+        "event_read"
+      ],
+      "given": {
+        "inbound": {
+          "type": "invoice.payment_failed",
+          "id": "evt_1PB0",
+          "signature_valid": true,
+          "arrived_on": "whisperr_own_billing_webhook_endpoint"
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "rejection_code": "signature_invalid",
+        "notes": "Whisperr's own billing webhook (internal/billing/webhook.go) processes Whisperr charging ITS customers. This connector processes a customer's Stripe account observing THEIR revenue. Reuse the claim-lease and payload-minimization PATTERN; never route one through the other's endpoint or signing secret. Distinct connection_id, distinct signing secret, distinct tenant."
+      }
+    },
+    {
+      "name": "stripe_test_mode_is_environment_not_envelope_mode",
+      "proves": "01: Stripe's test/live mode is the connection's environment; envelope mode is Whisperr's test-event lane. Two different axes.",
+      "negative": true,
+      "requires_scopes": [
+        "event_read"
+      ],
+      "given": {
+        "inbound": {
+          "type": "invoice.payment_failed",
+          "id": "evt_test_1",
+          "livemode": false,
+          "signature_valid": true
+        },
+        "state": {
+          "connection_environment": "development"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "mode": "live",
+          "origin": {
+            "provider": "stripe"
+          }
+        },
+        "notes": "A real event from a Stripe TEST-mode connection is envelope mode:live — it is a genuine observation of that connection. envelope mode:test is reserved for Whisperr's own isolated validation lane. Collapsing these would either leak sandbox data into production coverage or make real events unprocessable."
+      }
     }
   ]
 }

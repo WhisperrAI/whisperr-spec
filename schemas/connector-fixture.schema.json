@@ -4,55 +4,159 @@
   "title": "Whisperr connector conformance fixtures 2.0.0",
   "description": "One file per launch connector. Each connector's contract suite runs these cases. CI cross-checks that every capability the manifest declares true has at least one demonstrating case (contract 02, rule 4).",
   "type": "object",
-  "required": ["version", "provider", "manifest", "cases"],
+  "required": [
+    "version",
+    "provider",
+    "manifest",
+    "cases"
+  ],
   "additionalProperties": false,
   "properties": {
-    "$schema": { "type": "string" },
-    "version": { "type": "integer", "minimum": 1 },
-    "provider": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
-    "description": { "type": "string" },
-    "manifest": { "$ref": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/connection-manifest.schema.json" },
-    "cases": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/case" } }
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "provider": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "manifest": {
+      "$ref": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/connection-manifest.schema.json"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
   },
   "$defs": {
     "case": {
       "type": "object",
-      "required": ["name", "proves", "given", "expect"],
+      "required": [
+        "name",
+        "proves",
+        "given",
+        "expect"
+      ],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "proves": { "type": "string", "minLength": 1, "description": "Which contract invariant this case pins. A case that proves nothing does not belong here." },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proves": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which contract invariant this case pins. A case that proves nothing does not belong here."
+        },
         "demonstrates_capabilities": {
           "type": "array",
-          "items": { "enum": ["live_stream", "history", "identity", "catalog", "delivery"] },
+          "items": {
+            "enum": [
+              "live_stream",
+              "history",
+              "identity",
+              "catalog",
+              "delivery"
+            ]
+          },
           "uniqueItems": true,
           "description": "The manifest capability claims this case is the evidence for. A case often evidences two (a live webhook that also establishes an identity link). CI fails when a capability is declared true with no case listing it here."
         },
-        "negative": { "type": "boolean", "default": false, "description": "true = this case proves something must NOT happen." },
+        "negative": {
+          "type": "boolean",
+          "default": false,
+          "description": "true = this case proves something must NOT happen."
+        },
         "given": {
           "type": "object",
-          "required": ["inbound"],
+          "required": [
+            "inbound"
+          ],
           "additionalProperties": false,
           "properties": {
-            "inbound": { "type": "object", "description": "The provider-shaped input, plus transport facts (signature validity, delivery ordinal)." },
-            "state": { "type": "object", "description": "Pre-existing Whisperr state this case assumes." }
+            "inbound": {
+              "type": "object",
+              "description": "The provider-shaped input, plus transport facts (signature validity, delivery ordinal)."
+            },
+            "state": {
+              "type": "object",
+              "description": "Pre-existing Whisperr state this case assumes."
+            }
           }
         },
         "expect": {
           "type": "object",
-          "required": ["outcome"],
+          "required": [
+            "outcome"
+          ],
           "additionalProperties": false,
           "properties": {
-            "outcome": { "enum": ["accepted", "rejected", "quarantined", "suppressed", "ignored", "deduplicated", "correlated"] },
-            "envelope": { "type": "object", "description": "Expected subset of the canonical envelope. Volatile fields (event_id, received_at) are not asserted." },
-            "identity": { "type": "object", "description": "Expected identity effect. {\"creates_user\": false} is the common negative." },
-            "consent": { "type": ["array", "null"], "description": "Expected consent assertions. null or [] means NONE — the usual assertion for auth/billing/commerce events." },
-            "catalog": { "type": "object" },
-            "coverage": { "type": "object", "description": "Expected (capability, state) effect." },
-            "quarantine": { "type": ["object", "null"] },
-            "rejection_code": { "type": ["string", "null"] },
-            "notes": { "type": "string" }
+            "outcome": {
+              "enum": [
+                "accepted",
+                "rejected",
+                "quarantined",
+                "suppressed",
+                "ignored",
+                "deduplicated",
+                "correlated"
+              ]
+            },
+            "envelope": {
+              "type": "object",
+              "description": "Expected subset of the canonical envelope. Volatile fields (event_id, received_at) are not asserted."
+            },
+            "identity": {
+              "type": "object",
+              "description": "Expected identity effect. {\"creates_user\": false} is the common negative."
+            },
+            "consent": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "description": "Expected consent assertions. null or [] means NONE — the usual assertion for auth/billing/commerce events."
+            },
+            "catalog": {
+              "type": "object"
+            },
+            "coverage": {
+              "type": "object",
+              "description": "Expected (capability, state) effect."
+            },
+            "quarantine": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "rejection_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "notes": {
+              "type": "string"
+            }
           }
+        },
+        "requires_scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "description": "Provider scopes/permissions this case's behavior actually needs. CI fails when a case requires a scope the manifest does not request — this is how a connector stops claiming behavior its authorization cannot deliver."
         }
       }
     }

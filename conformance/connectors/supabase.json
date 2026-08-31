@@ -38,7 +38,14 @@
         "service_role_key",
         "database:write",
         "secrets:read"
-      ]
+      ],
+      "oauth": {
+        "redirect_uri": "https://api.whisperr.net/v1/connections/supabase/oauth/callback",
+        "app_identifier": null,
+        "token_exchange": "client_secret",
+        "registration_status": "not_registered",
+        "install_mode": null
+      }
     },
     "capabilities": {
       "live_stream": true,

@@ -75,6 +75,14 @@ This matters because the normal ingestion path auto-creates users and fans out t
 Without a contract-level discriminator, every connector would re-solve isolation separately and
 one of them would get it wrong.
 
+**`mode` is not the provider's sandbox flag.** A connection points at a provider environment
+(`production` / `staging` / `development` — Stripe's live-vs-test, Shopify's dev store). That is
+the connection's `environment` in [02](02-source-connection-manifest.md). A real event arriving
+from a Stripe *test-mode* connection is `mode: live` — it is a genuine observation of that
+connection. `mode: test` is reserved for Whisperr's own isolated validation lane. Collapsing the
+two axes either leaks sandbox data into production coverage or makes real events from a
+development connection unprocessable; both have happened to other people's connectors.
+
 ### `event.code`
 Lowercase `snake_case`, `^[a-z][a-z0-9]*(_[a-z0-9]+)*$` — identical to the existing
 `app_events.code` CHECK constraint and to `event_type` in `SPEC.md`. An event code is only legal
