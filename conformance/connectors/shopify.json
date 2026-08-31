@@ -101,7 +101,7 @@
     },
     "capabilities": {
       "live_stream": true,
-      "history": true,
+      "history": false,
       "identity": "namespace_authoritative",
       "catalog": true,
       "delivery": false
@@ -489,8 +489,8 @@
         "inbound": {
           "source_kind": "sdk",
           "pixel_event": "checkout_started",
-          "customer_stable_id": "user_8842",
-          "occurred_at": "2026-08-31T09:14:02.117Z"
+          "occurred_at": "2026-08-31T09:14:02.117Z",
+          "claimed_customer_id": "8842001"
         }
       },
       "expect": {
@@ -502,8 +502,12 @@
           },
           "event": {
             "code": "checkout_started"
+          },
+          "subject": {
+            "authority": "anonymous"
           }
-        }
+        },
+        "notes": "Browser pixel claims are untrusted and stay anonymous, even if a customer ID matches a known server-side identity. They do not prove authenticated live order transport or permit personalized dispatch."
       },
       "requires_scopes": [
         "write_pixels",
@@ -511,11 +515,8 @@
       ]
     },
     {
-      "name": "historical_order_import_never_live",
-      "proves": "08: Shopify historical order import reaches validated and carries the historical label, never live",
-      "demonstrates_capabilities": [
-        "history"
-      ],
+      "name": "historical_order_import_not_advertised",
+      "proves": "08: unimplemented history does not appear as an available capability",
       "negative": true,
       "given": {
         "inbound": {
@@ -525,13 +526,8 @@
         }
       },
       "expect": {
-        "outcome": "accepted",
-        "coverage": {
-          "capability": "history",
-          "state": "validated",
-          "label": "historical"
-        },
-        "notes": "live_stream and history are separate capability states on the same connection — importing backfill never advances the live_stream state."
+        "outcome": "rejected",
+        "notes": "S34 implements current catalog synchronization and live webhooks, not historical order backfill. History remains false until a tested importer exists; it can never promote live_stream."
       },
       "requires_scopes": [
         "read_orders"

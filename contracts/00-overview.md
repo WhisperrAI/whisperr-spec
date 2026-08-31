@@ -1,6 +1,9 @@
 # Whisperr integration contracts — 2.0.0
 
-Status: **`2.0.0-rc1` — drafted, NOT frozen.** Freezing is George's sign-off (O00 gate).
+Status: **`2.0.0-rc4` — implementation working baseline.** This revision corrects
+provider assumptions discovered while building against rc3. It is not evidence
+of deployed callbacks, app approval, or production readiness. RevenueCat remains
+deferred by the product owner's explicit decision; its fixtures are retained.
 
 These contracts are the single source of truth for the Whisperr Integration Program. Every
 connector, every executor (MCP, PR agent, CLI, wizard), and every internal service is built

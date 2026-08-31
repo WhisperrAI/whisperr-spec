@@ -37,8 +37,9 @@ for f in ("conformance/wire.json", "conformance/behavior.json", "conformance/pus
     if f not in docs: err(f, "SDK fixture missing — 2.0.0 must not remove it")
 
 # ---------------------------------------------------------------- 4. connector fixtures
-LAUNCH = {"supabase","clerk","auth0","stripe","revenuecat","shopify","woocommerce",
+LAUNCH = {"supabase","clerk","auth0","stripe","shopify","woocommerce",
           "segment","google_analytics","mixpanel","amplitude","custom_code"}
+DEFERRED = {"revenuecat"}  # Explicit product decision; keep fixtures, do not gate launch.
 BOOL_CAPS = ("live_stream","history","catalog","delivery")
 seen = set()
 
@@ -119,6 +120,9 @@ for f, d in sorted(docs.items()):
         if len(modes) != len(set(modes)):
             err(f, "auth.oauth.clients has duplicate install_mode entries")
         envs = {c.get("environment") for c in oauth.get("clients", [])}
+        extra_envs = envs - {None} - set(man.get("environments", []))
+        if extra_envs:
+            err(f, f"OAuth clients target undeclared environments {sorted(extra_envs)}")
         if oauth.get("registration_status") == "not_registered":
             if oauth.get("clients"):
                 err(f, "registration_status is not_registered but OAuth clients are listed")
@@ -153,7 +157,7 @@ for f, d in sorted(docs.items()):
 
 missing = LAUNCH - seen
 if missing: err("conformance/connectors", f"no fixture file for launch connector(s): {sorted(missing)}")
-extra = seen - LAUNCH
+extra = seen - LAUNCH - DEFERRED
 if extra: err("conformance/connectors", f"fixture for a non-launch connector: {sorted(extra)}")
 
 # ---------------------------------------------------------------- 5. relay payload cannot carry an address
@@ -178,4 +182,4 @@ if DEBT:
     print()
 
 ncases = sum(len(d.get("cases", [])) for f, d in docs.items() if f.startswith("conformance/connectors/"))
-print(f"spec OK — {len(docs)} documents, {len(seen)} launch connectors, {ncases} connector cases")
+print(f"spec OK — {len(docs)} documents, {len(seen & LAUNCH)} launch connectors, {len(seen & DEFERRED)} deferred, {ncases} connector cases (structural checks only)")

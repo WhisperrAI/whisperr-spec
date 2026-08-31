@@ -63,6 +63,7 @@
           "enum": [
             "oauth",
             "signed_webhook",
+            "webhook_bearer",
             "api_key",
             "plugin_pairing",
             "none"

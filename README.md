@@ -3,7 +3,7 @@
 The single source of truth for the Whisperr integration contracts and for SDK ingestion
 behavior.
 
-## Integration contracts — `2.0.0-rc1`
+## Integration contracts — `2.0.0-rc4`
 
 [`contracts/`](contracts) holds the contracts the Whisperr Integration Program is built
 against: the canonical event envelope, source connection manifests, identity authority modes,
@@ -11,11 +11,16 @@ consent assertions, registration revisions, catalog projection, the delivery rel
 coverage/health states, the error and quarantine taxonomy, and the SDK compatibility rules.
 Start at [`contracts/00-overview.md`](contracts/00-overview.md).
 
-[`conformance/connectors/`](conformance/connectors) holds one fixture file per launch connector
+[`conformance/connectors/`](conformance/connectors) holds one fixture file per planned connector
 (Supabase, Clerk, Auth0, Stripe, RevenueCat, Shopify, WooCommerce, Segment, GA, Mixpanel,
 Amplitude, and custom code via MCP / PR agent / CLI). `python3 validate.py` enforces the
 structural rules the JSON Schemas cannot — above all the **capability-honesty rule**: a
 connector may not declare a capability its fixtures do not demonstrate.
+
+RevenueCat is explicitly deferred; its fixture remains as future work and is not
+a release blocker. The validator checks fixture structure and internal consistency,
+not whether a real provider installation or runtime test has passed. Executable
+connector tests and installation evidence are separate requirements.
 
 **2.0.0 requires no SDK release.** The v1 wire contract below is unchanged and still gates every
 SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md).

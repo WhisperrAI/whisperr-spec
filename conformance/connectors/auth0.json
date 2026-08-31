@@ -2,7 +2,7 @@
   "$schema": "../../schemas/connector-fixture.schema.json",
   "version": 1,
   "provider": "auth0",
-  "description": "Auth0 via event/log streams. At-least-once AND out-of-order, so occurrence-time ordering and idempotency are mandatory, not optional.",
+  "description": "Auth0 Event Streams CloudEvents over per-stream bearer-authenticated HTTPS. Strict source/tenant/stream binding, authoritative ID-only lifecycle, occurrence ordering and idempotency; not a Management API directory import or login-log connector.",
   "manifest": {
     "manifest_version": "2.0.0",
     "provider": "auth0",
@@ -10,26 +10,18 @@
     "family": "auth",
     "environments": [
       "production",
+      "staging",
       "development"
     ],
     "auth": {
-      "mode": "signed_webhook",
+      "mode": "webhook_bearer",
       "credential_kinds": [
         "provider_secret"
       ],
-      "scopes": [
-        {
-          "scope": "read:logs",
-          "required": true,
-          "why": "log stream events"
-        },
-        {
-          "scope": "read:users",
-          "required": false,
-          "why": "minimized profile fields"
-        }
-      ],
+      "scopes": [],
       "never_requests": [
+        "read:logs",
+        "read:users",
         "update:users",
         "read:user_idp_tokens"
       ]
@@ -42,17 +34,17 @@
       "delivery": false
     },
     "correlation": {
-      "occurrence_key_template": "auth0:{type}:{log_id}"
+      "occurrence_key_template": "auth0:{type}:{id}"
     },
     "health": {
       "signals": [
         "stream_lag",
-        "signature_valid",
+        "authentication_valid",
         "out_of_order_rate",
         "error_rate"
       ],
       "degraded_when": [
-        "signature_valid == false",
+        "authentication_valid == false",
         "stream_lag > 15m"
       ]
     },
@@ -67,21 +59,32 @@
   },
   "cases": [
     {
-      "name": "log_stream_event_becomes_envelope",
-      "proves": "01: Auth0 stream events map to the canonical envelope",
+      "name": "event_stream_creation_becomes_envelope",
+      "proves": "01,03: authenticated user.created CloudEvent establishes authoritative identity after exact source binding",
       "given": {
         "inbound": {
-          "type": "ss",
-          "log_id": "90020260831091402",
-          "user_id": "auth0|991",
-          "date": "2026-08-31T09:14:02.117Z",
-          "signature_valid": true
+          "specversion": "1.0",
+          "type": "user.created",
+          "id": "evt_1",
+          "source": "urn:auth0:tenant.example.auth0.com",
+          "a0tenant": "tenant_fixture",
+          "a0stream": "est_fixture",
+          "time": "2026-08-31T09:14:02.117Z",
+          "data": {
+            "object": {
+              "user_id": "auth0|991"
+            }
+          },
+          "bearer_valid": true
         }
       },
       "expect": {
         "outcome": "accepted",
         "envelope": {
           "mode": "live",
+          "event": {
+            "code": "user_signed_up"
+          },
           "subject": {
             "authority": "authoritative",
             "source_subject_id": "auth0|991"
@@ -93,7 +96,8 @@
           "time": {
             "occurred_at": "2026-08-31T09:14:02.117Z"
           }
-        }
+        },
+        "consent": []
       },
       "demonstrates_capabilities": [
         "live_stream",
@@ -101,45 +105,73 @@
       ]
     },
     {
-      "name": "out_of_order_delivery_orders_on_occurrence",
-      "proves": "01: occurred_at orders, received_at NEVER does",
+      "name": "out_of_order_creation_cannot_undo_block",
+      "proves": "03: occurrence ordering prevents late creation from reactivating an account",
       "given": {
         "inbound": [
           {
-            "type": "su",
-            "log_id": "L2",
-            "date": "2026-08-31T09:16:00.000Z",
-            "user_id": "auth0|991",
-            "signature_valid": true
+            "specversion": "1.0",
+            "type": "user.updated",
+            "id": "evt_2",
+            "source": "urn:auth0:tenant.example.auth0.com",
+            "a0tenant": "tenant_fixture",
+            "a0stream": "est_fixture",
+            "time": "2026-08-31T09:16:00.000Z",
+            "data": {
+              "object": {
+                "user_id": "auth0|991",
+                "blocked": true
+              }
+            },
+            "bearer_valid": true
           },
           {
-            "type": "ss",
-            "log_id": "L1",
-            "date": "2026-08-31T09:14:02.117Z",
-            "user_id": "auth0|991",
-            "signature_valid": true
+            "specversion": "1.0",
+            "type": "user.created",
+            "id": "evt_1",
+            "source": "urn:auth0:tenant.example.auth0.com",
+            "a0tenant": "tenant_fixture",
+            "a0stream": "est_fixture",
+            "time": "2026-08-31T09:14:02.117Z",
+            "data": {
+              "object": {
+                "user_id": "auth0|991"
+              }
+            },
+            "bearer_valid": true
           }
         ]
       },
       "expect": {
         "outcome": "accepted",
-        "notes": "L2 arrives first, L1 second. Final state must reflect L2 as the latest event. Ordering on receipt would corrupt state — this is why occurrence-time ordering is mandatory for EVERY source, not an Auth0 special case."
+        "identity": {
+          "link_status": "revoked"
+        },
+        "notes": "The newer blocked state wins; receiving an older creation does not reactivate it."
       }
     },
     {
       "name": "at_least_once_redelivery_is_idempotent",
-      "proves": "01: duplicate log_id collapses to one ingest",
+      "proves": "01: duplicate CloudEvent id collapses within its connection",
       "given": {
         "inbound": {
-          "type": "ss",
-          "log_id": "L1",
-          "user_id": "auth0|991",
-          "signature_valid": true,
-          "delivery_ordinal": 3
+          "specversion": "1.0",
+          "type": "user.created",
+          "id": "evt_1",
+          "source": "urn:auth0:tenant.example.auth0.com",
+          "a0tenant": "tenant_fixture",
+          "a0stream": "est_fixture",
+          "time": "2026-08-31T09:14:02.117Z",
+          "data": {
+            "object": {
+              "user_id": "auth0|991"
+            }
+          },
+          "bearer_valid": true
         },
         "state": {
           "already_ingested": [
-            "con_auth0:L1"
+            "con_auth0:evt_1"
           ]
         }
       },
@@ -148,32 +180,52 @@
       }
     },
     {
-      "name": "login_creates_no_consent",
-      "proves": "04: consent is never inferred from authentication",
+      "name": "identity_creates_no_consent_or_profile_copy",
+      "proves": "04: authentication lifecycle does not authorize messaging",
       "negative": true,
       "given": {
         "inbound": {
-          "type": "s",
-          "log_id": "L3",
-          "user_id": "auth0|991",
-          "user_name": "ada@example.com",
-          "signature_valid": true
+          "specversion": "1.0",
+          "type": "user.created",
+          "id": "evt_3",
+          "source": "urn:auth0:tenant.example.auth0.com",
+          "a0tenant": "tenant_fixture",
+          "a0stream": "est_fixture",
+          "time": "2026-08-31T09:14:02.117Z",
+          "data": {
+            "object": {
+              "user_id": "auth0|991",
+              "email": "ada@example.invalid",
+              "name": "private"
+            }
+          },
+          "bearer_valid": true
         }
       },
       "expect": {
         "outcome": "accepted",
-        "consent": []
+        "consent": [],
+        "notes": "Only user_id and lifecycle status survive projection; no address, name or marketing permission is copied."
       }
     },
     {
-      "name": "user_blocked_propagates",
-      "proves": "03: disablement is handled, not ignored",
+      "name": "user_deleted_propagates",
+      "proves": "03: authoritative deletion suppresses future personalized dispatch",
       "given": {
         "inbound": {
-          "type": "limit_wc",
-          "log_id": "L4",
-          "user_id": "auth0|991",
-          "signature_valid": true
+          "specversion": "1.0",
+          "type": "user.deleted",
+          "id": "evt_4",
+          "source": "urn:auth0:tenant.example.auth0.com",
+          "a0tenant": "tenant_fixture",
+          "a0stream": "est_fixture",
+          "time": "2026-08-31T09:14:02.117Z",
+          "data": {
+            "object": {
+              "user_id": "auth0|991"
+            }
+          },
+          "bearer_valid": true
         }
       },
       "expect": {
@@ -184,14 +236,51 @@
       }
     },
     {
-      "name": "invalid_signature_rejected",
-      "proves": "09: rejection happens before acknowledge",
+      "name": "invalid_bearer_rejected",
+      "proves": "09: failed transport authentication writes no durable state",
       "negative": true,
       "given": {
         "inbound": {
-          "type": "ss",
-          "log_id": "L5",
-          "signature_valid": false
+          "specversion": "1.0",
+          "type": "user.created",
+          "id": "evt_5",
+          "source": "urn:auth0:tenant.example.auth0.com",
+          "a0tenant": "tenant_fixture",
+          "a0stream": "est_fixture",
+          "time": "2026-08-31T09:14:02.117Z",
+          "data": {
+            "object": {
+              "user_id": "auth0|991"
+            }
+          },
+          "bearer_valid": false
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "rejection_code": "signature_invalid",
+        "notes": "The shared ingress error family is signature_invalid; Auth0 transport actually verifies a bearer token, not a fictitious signature."
+      }
+    },
+    {
+      "name": "wrong_stream_rejected_even_with_valid_bearer",
+      "proves": "09: token possession cannot target another source binding",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "specversion": "1.0",
+          "type": "user.created",
+          "id": "evt_6",
+          "source": "urn:auth0:tenant.example.auth0.com",
+          "a0tenant": "tenant_fixture",
+          "a0stream": "est_other",
+          "time": "2026-08-31T09:14:02.117Z",
+          "data": {
+            "object": {
+              "user_id": "auth0|991"
+            }
+          },
+          "bearer_valid": true
         }
       },
       "expect": {
@@ -201,15 +290,23 @@
     },
     {
       "name": "stale_event_outside_window_rejected",
-      "proves": "01: the +5min/-30day acceptance window applies to every source",
+      "proves": "01: canonical timestamp limits apply before persistence",
       "negative": true,
       "given": {
         "inbound": {
-          "type": "ss",
-          "log_id": "L6",
-          "date": "2026-01-01T00:00:00.000Z",
-          "user_id": "auth0|991",
-          "signature_valid": true
+          "specversion": "1.0",
+          "type": "user.created",
+          "id": "evt_7",
+          "source": "urn:auth0:tenant.example.auth0.com",
+          "a0tenant": "tenant_fixture",
+          "a0stream": "est_fixture",
+          "time": "2026-01-01T00:00:00.000Z",
+          "data": {
+            "object": {
+              "user_id": "auth0|991"
+            }
+          },
+          "bearer_valid": true
         }
       },
       "expect": {

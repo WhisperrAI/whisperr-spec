@@ -10,6 +10,7 @@
     "family": "auth",
     "environments": [
       "production",
+      "staging",
       "development"
     ],
     "auth": {
@@ -26,7 +27,7 @@
         {
           "scope": "user.updated",
           "required": true,
-          "why": "profile + deletion state"
+          "why": "ID-only account lifecycle state"
         },
         {
           "scope": "user.deleted",
@@ -119,8 +120,8 @@
       ]
     },
     {
-      "name": "signup_creates_no_consent",
-      "proves": "04: consent is never inferred from a login or signup",
+      "name": "unsupported_session_event_creates_no_consent",
+      "proves": "04: unimplemented session events are not advertised as observed activity",
       "negative": true,
       "given": {
         "inbound": {
@@ -133,9 +134,9 @@
         }
       },
       "expect": {
-        "outcome": "accepted",
+        "outcome": "ignored",
         "consent": [],
-        "notes": "A login produces an address at most. It never produces permission to use it."
+        "notes": "The connector supports user lifecycle events only. Session payloads create no business event, address or consent."
       }
     },
     {

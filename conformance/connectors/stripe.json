@@ -10,7 +10,8 @@
     "family": "billing",
     "environments": [
       "production",
-      "development"
+      "development",
+      "staging"
     ],
     "auth": {
       "mode": "oauth",
@@ -92,7 +93,7 @@
       "delivery": false
     },
     "correlation": {
-      "occurrence_key_template": "stripe:{object}:{object_id}:{type}"
+      "occurrence_key_template": "stripe:{object}:{object_id}:{type}:{provider_event_id}"
     },
     "health": {
       "signals": [
@@ -164,7 +165,7 @@
             "provider_event_id": "evt_1P9xKl2eZvKYlo2C"
           },
           "correlation": {
-            "occurrence_key": "stripe:invoice:in_1P9x:invoice.payment_failed"
+            "occurrence_key": "stripe:invoice:in_1P9x:invoice.payment_failed:evt_1P9xKl2eZvKYlo2C"
           }
         },
         "identity": {
@@ -261,6 +262,27 @@
       },
       "expect": {
         "outcome": "deduplicated"
+      }
+    },
+    {
+      "name": "repeatable_object_updates_are_distinct_occurrences",
+      "proves": "01: the same subscription can update repeatedly; object ID plus type must not collapse distinct provider events",
+      "given": {
+        "inbound": {
+          "type": "customer.subscription.updated",
+          "id": "evt_second_update",
+          "data": { "object": { "id": "sub_repeat", "customer": "cus_existing", "status": "active" } },
+          "signature_valid": true
+        },
+        "state": {
+          "already_ingested": ["con_stripe:evt_first_update"],
+          "existing_occurrence": "stripe:subscription:sub_repeat:customer.subscription.updated:evt_first_update"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": { "correlation": { "occurrence_key": "stripe:subscription:sub_repeat:customer.subscription.updated:evt_second_update" } },
+        "notes": "Retries of evt_second_update deduplicate, but the distinct first update remains a separate occurrence. A second authorized connection receiving this same event correlates using the same occurrence key."
       }
     },
     {

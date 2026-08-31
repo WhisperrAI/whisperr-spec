@@ -26,17 +26,12 @@
         {
           "scope": "database:read",
           "required": true,
-          "why": "read approved tables only"
+          "why": "inspect approved project schema metadata; data access still requires explicit project, table and field approval"
         },
         {
           "scope": "database:write",
           "required": true,
-          "why": "create and maintain the dedicated Whisperr integration schema and its outbox, so customer transactions never depend on Whisperr availability. Setup-scoped: never used to modify customer application tables."
-        },
-        {
-          "scope": "auth:read",
-          "required": false,
-          "why": "Supabase Auth identity links"
+          "why": "execute approved SQL for the private integration schema/outbox and triggers attached only to approved source tables; ID-only auth.users projection establishes identity. Never mutate customer application rows or columns. The management query scope is broad: the reviewed generated SQL is the narrower application boundary."
         }
       ],
       "never_requests": [
@@ -94,13 +89,7 @@
             "note": "Whisperr never writes customer analytics. Trim."
           }
         ],
-        "pending_grant": [
-          {
-            "scope": "auth:read",
-            "closed_by": "S30",
-            "note": "S30 requires Supabase Auth as an authoritative identity source, but the registered app grants no auth scope. Either add it, or Supabase Auth identity drops out of scope for launch. Optional today so it does not block; escalated to George."
-          }
-        ]
+        "pending_grant": []
       }
     },
     "capabilities": {

@@ -1,5 +1,10 @@
 # 02 — Source connection manifest
 
+Auth0's launch connector uses Event Streams CloudEvents with per-stream bearer authentication
+over HTTPS (`webhook_bearer`), bound to the exact source, tenant and stream. It requests no
+Management API `read:logs` or `read:users` token. Login logs are not an authoritative account-state
+feed. See [Auth0's event-stream setup](https://auth0.com/docs/customize/events/create-an-event-stream).
+
 `manifest_version: 2.0.0` · Schema: [`../schemas/connection-manifest.schema.json`](../schemas/connection-manifest.schema.json)
 
 One declarative file per provider, describing what that connector *is* — its auth, its honest
@@ -75,7 +80,7 @@ Credentials are typed, and the type is enforced at issuance *and* at use (F11):
 | `server_ingestion_key` | server-side ingestion | no |
 | `mcp_credential` | MCP tool calls only | no |
 | `oauth_token` | one provider, one connection | no |
-| `provider_secret` | webhook signature verification | no |
+| `provider_secret` | webhook signature verification (connection- or destination-scoped) | no |
 | `delivery_credential` | one delivery provider | no |
 
 **An `mcp_credential` must never be usable as an ingestion or provider credential.** This is a
@@ -115,6 +120,23 @@ Route shape for every provider: `https://api.whisperr.net/v1/connections/{provid
 
 Assuming Stripe works like Shopify is the single most likely wiring mistake in the program, which
 is why the manifest states it rather than leaving it to whoever writes the connector.
+
+Stripe Apps event destinations are registered on the developer account and
+receive connected-account events. Verify the destination's environment-specific
+signature first, then route using the signed event account and live/test mode to
+currently authorized workspace connections. Customers do not each paste a
+webhook secret. Never reuse Whisperr's own billing destination secret.
+
+Supabase `auth:read` grants access to Auth configuration/SSO, not the user
+directory. Its absence does not prevent an explicitly approved ID-only
+`auth.users` database projection. That projection uses the database query
+permission, and its private schema, exact trigger attachments and field
+allowlists require separate customer approval. Requesting a broad management
+scope does not imply approval to read every table. OAuth scope parameters cannot
+silently narrow an over-granted registered Supabase app.
+
+Verified references: [Stripe App events](https://docs.stripe.com/stripe-apps/events),
+[Supabase OAuth scopes](https://supabase.com/docs/guides/integrations/build-a-supabase-oauth-integration/oauth-scopes).
 
 **`registration_status` is not approval, and not a working connector.** Three separate facts get
 conflated constantly, so they are tracked as three things:

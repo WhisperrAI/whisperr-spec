@@ -50,7 +50,7 @@ an **app**, is defined by a **registration revision**, and is *observed by* one 
   },
 
   "correlation": {
-    "occurrence_key": "stripe:invoice:in_1P9x:payment_failed",
+    "occurrence_key": "stripe:invoice:in_1P9x:invoice.payment_failed:evt_1P9xKl2eZvKYlo2C",
     "idempotency_key": "con_5Hj…:evt_1P9xKl2eZvKYlo2C"
   }
 }
@@ -130,6 +130,11 @@ into silence — they must *correlate*.
 Each connector's manifest declares how it derives its `occurrence_key`; a connector that cannot
 derive a stable one declares `occurrence_key: null` and its events are never correlated (safe
 default — duplicates are visible, not silently merged).
+
+For repeatable Stripe notifications, object ID and event type alone are **not**
+an occurrence key: a subscription may update repeatedly and an invoice may have
+multiple payment attempts. Include the provider event ID. Two connections seeing
+that same event correlate; distinct updates to the same object remain distinct.
 
 ## Invariants
 

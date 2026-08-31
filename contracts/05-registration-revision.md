@@ -24,7 +24,7 @@ draft ──► validating ──► committed ──► superseded
 | state | meaning |
 |---|---|
 | `draft` | being assembled by an executor; not visible to ingestion |
-| `validating` | isolated test events are being submitted against it ([01](01-event-envelope.md) `mode: test`) |
+| `validating` | event semantics are checked through isolated test events, or explicit native-provider mapping approval |
 | `committed` | live; its event codes are now legal for ingestion |
 | `failed` | validation did not pass; **zero** events were created |
 | `superseded` | a later revision replaced it; history retained, never deleted |
@@ -64,6 +64,24 @@ wizard is indistinguishable in behavior from one committed by MCP. That equivale
 point of X20's "shared integration playbook".
 
 ## Atomicity
+
+### Native source approval is not a fake delivery
+
+For a provider-supported observation (Shopify, Supabase, Stripe, Clerk or Auth0), an authenticated
+owner/admin may approve the exact event definitions and field mappings in setup. The trusted
+backend records `validation.mapping_approval` with `connection_id`, current `auth_version`,
+`approved_by` and a SHA-256 `approval_hash`. It commits the registry and local source configuration
+in the same transaction. This lets a merchant build a plan without making a real purchase merely
+to register an event name.
+
+This approval does **not** populate `test_events_seen` or promote transport, live, identity or
+health evidence. Those still require their own real checks and deliveries. Source ownership,
+environment, current authorization epoch and schema compatibility are checked at commit; event
+IDs and unrelated bindings survive. Conflicting event schemas require an explicit repair.
+
+This is a backend-only native-provider seam, not an executor flag. MCP, PR agent, wizard and CLI
+cannot copy an approval object to bypass isolated custom-code validation. Their parity contract
+is unchanged.
 
 A revision commits entirely or not at all.
 
