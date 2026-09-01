@@ -1,0 +1,413 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/connection-manifest.schema.json",
+  "title": "Whisperr source connection manifest 2.0.0",
+  "type": "object",
+  "required": [
+    "manifest_version",
+    "provider",
+    "display_name",
+    "family",
+    "environments",
+    "auth",
+    "capabilities",
+    "health",
+    "lifecycle",
+    "kill_switch",
+    "version"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "manifest_version": {
+      "const": "2.0.0"
+    },
+    "provider": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "family": {
+      "enum": [
+        "auth",
+        "billing",
+        "commerce",
+        "database",
+        "analytics",
+        "cdp",
+        "custom_code"
+      ]
+    },
+    "environments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "production",
+          "staging",
+          "development"
+        ]
+      }
+    },
+    "auth": {
+      "type": "object",
+      "required": [
+        "mode",
+        "credential_kinds"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "oauth",
+            "signed_webhook",
+            "webhook_bearer",
+            "api_key",
+            "plugin_pairing",
+            "none"
+          ]
+        },
+        "credential_kinds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/credential_kind"
+          }
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "scope",
+              "required",
+              "why"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "scope": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "why": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Least privilege is justified per scope, or the scope does not ship."
+              }
+            }
+          }
+        },
+        "never_requests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Positive commitment, fixture-checked: none of these appears in any authorization request."
+        },
+        "oauth": {
+          "type": "object",
+          "required": [
+            "redirect_uri",
+            "token_exchange",
+            "registration_status"
+          ],
+          "additionalProperties": false,
+          "description": "The ACTUAL registered OAuth configuration, not a proposal. F11's callback framework and the connector must build exactly this route — a mismatch here is a silent install failure.",
+          "properties": {
+            "redirect_uri": {
+              "type": "string",
+              "pattern": "^https://"
+            },
+            "app_identifier": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Provider-side app id, for traceability back to the registration."
+            },
+            "token_exchange": {
+              "enum": [
+                "client_secret",
+                "developer_api_key",
+                "provider_specific"
+              ],
+              "description": "How the code->token exchange authenticates. Stripe Apps use the DEVELOPER ACCOUNT'S API key for the installation mode, NOT a Shopify-style client secret — assuming otherwise is the most likely wiring mistake."
+            },
+            "registration_status": {
+              "enum": [
+                "not_registered",
+                "registered_unpublished",
+                "in_review",
+                "approved"
+              ],
+              "description": "Registration is NOT approval and NOT a working connector. Tracked separately on purpose."
+            },
+            "clients": {
+              "type": "array",
+              "minItems": 1,
+              "description": "One entry per installation mode. Stripe issues a SEPARATE client_id for live, test and sandbox — using the wrong one for a connection's environment fails the install with a confusing error. Modelling it here makes that mistake unwritable. Single-client providers carry one entry with install_mode 'default'. client_id values are public (they appear in the authorize URL a user visits); they are not secrets.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "install_mode",
+                  "client_id"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "install_mode": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Provider's own name for the mode: live | test | sandbox | default."
+                  },
+                  "client_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "environment": {
+                    "oneOf": [
+                      {
+                        "enum": [
+                          "production",
+                          "staging",
+                          "development"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Which connection environment selects this client. null = any."
+                  }
+                }
+              }
+            },
+            "authorize_url_template": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Verbatim authorize URL with {client_id} and {redirect_uri} placeholders, when the provider does not use a plain /oauth/authorize."
+            },
+            "redirect_uri_operational": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether the callback route is actually deployed and answering. Registered is NOT operational — every one of these is a build target until a connector proves otherwise."
+            }
+          }
+        },
+        "granted_scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "description": "What the REGISTERED provider app actually carries today, verified against the provider — as distinct from `scopes`, which is what the connector needs and justifies. CI compares them in both directions: a required scope that is not granted is an install failure waiting to happen; a granted scope with no justification is over-permissioning and a §7 human-review escalation."
+        },
+        "scope_deltas": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Known, ACKNOWLEDGED differences between what the connector needs and what the registered provider app grants. CI fails on any delta not listed here — so a gap is tracked debt with an owner, not a permanently red build nobody reads.",
+          "properties": {
+            "pending_grant": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "scope",
+                  "closed_by",
+                  "note"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  },
+                  "closed_by": {
+                    "type": "string",
+                    "description": "Task id that amends the provider app."
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "overgranted": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "scope",
+                  "action",
+                  "owner",
+                  "note"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "enum": [
+                      "trim",
+                      "justify",
+                      "accept"
+                    ]
+                  },
+                  "owner": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "required": [
+        "live_stream",
+        "history",
+        "identity",
+        "catalog",
+        "delivery"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "live_stream": {
+          "type": "boolean"
+        },
+        "history": {
+          "type": "boolean"
+        },
+        "identity": {
+          "oneOf": [
+            {
+              "$ref": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/identity.schema.json#/$defs/authority_mode"
+            },
+            {
+              "const": "none"
+            }
+          ]
+        },
+        "catalog": {
+          "type": "boolean"
+        },
+        "delivery": {
+          "type": "boolean"
+        }
+      }
+    },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "occurrence_key_template": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "null = this connector cannot derive a stable occurrence key; its events are never correlated."
+        }
+      }
+    },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "catalog_threshold_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Past this, catalog availability becomes 'unknown' automatically."
+        }
+      }
+    },
+    "health": {
+      "type": "object",
+      "required": [
+        "signals"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "signals": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "degraded_when": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "required": [
+        "disconnect",
+        "revocation",
+        "recovery",
+        "replay"
+      ],
+      "additionalProperties": false,
+      "description": "All four are REQUIRED true by the launch gate (PROGRAM.md §8).",
+      "properties": {
+        "disconnect": {
+          "const": true
+        },
+        "revocation": {
+          "const": true
+        },
+        "recovery": {
+          "const": true
+        },
+        "replay": {
+          "const": true
+        },
+        "uninstall_signal": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope_change_signal": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "kill_switch": {
+      "type": "string",
+      "pattern": "^provider\\.[a-z][a-z0-9_]*$"
+    },
+    "version": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "credential_kind": {
+      "enum": [
+        "publishable_ingestion_key",
+        "server_ingestion_key",
+        "mcp_credential",
+        "oauth_token",
+        "provider_secret",
+        "delivery_credential"
+      ],
+      "description": "Enforced at issuance AND at use. An mcp_credential must never be usable as an ingestion or provider credential."
+    }
+  }
+}

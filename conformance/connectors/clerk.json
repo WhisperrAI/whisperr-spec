@@ -1,0 +1,281 @@
+{
+  "$schema": "../../schemas/connector-fixture.schema.json",
+  "version": 1,
+  "provider": "clerk",
+  "description": "Clerk via signed Svix webhooks. Authoritative identity. Never infers messaging consent from an auth event.",
+  "manifest": {
+    "manifest_version": "2.0.0",
+    "provider": "clerk",
+    "display_name": "Clerk",
+    "family": "auth",
+    "environments": [
+      "production",
+      "staging",
+      "development"
+    ],
+    "auth": {
+      "mode": "signed_webhook",
+      "credential_kinds": [
+        "provider_secret"
+      ],
+      "scopes": [
+        {
+          "scope": "user.created",
+          "required": true,
+          "why": "authoritative identity links"
+        },
+        {
+          "scope": "user.updated",
+          "required": true,
+          "why": "ID-only account lifecycle state"
+        },
+        {
+          "scope": "user.deleted",
+          "required": true,
+          "why": "deletion propagation"
+        }
+      ],
+      "never_requests": [
+        "session.token",
+        "organization.write"
+      ]
+    },
+    "capabilities": {
+      "live_stream": true,
+      "history": false,
+      "identity": "authoritative",
+      "catalog": false,
+      "delivery": false
+    },
+    "correlation": {
+      "occurrence_key_template": "clerk:{type}:{svix_id}"
+    },
+    "health": {
+      "signals": [
+        "webhook_receipt_lag",
+        "signature_valid",
+        "error_rate"
+      ],
+      "degraded_when": [
+        "signature_valid == false",
+        "webhook_receipt_lag > 15m"
+      ]
+    },
+    "lifecycle": {
+      "disconnect": true,
+      "revocation": true,
+      "recovery": true,
+      "replay": true
+    },
+    "kill_switch": "provider.clerk",
+    "version": "1"
+  },
+  "cases": [
+    {
+      "name": "user_created_establishes_authoritative_link",
+      "proves": "03: Clerk may create an identity link",
+      "given": {
+        "inbound": {
+          "type": "user.created",
+          "data": {
+            "id": "user_2abc",
+            "external_id": "user_8842",
+            "email_addresses": [
+              {
+                "email_address": "ada@example.com"
+              }
+            ]
+          },
+          "svix_id": "msg_2abc",
+          "svix_signature_valid": true,
+          "occurred_at": "2026-08-31T09:14:02.117Z"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "mode": "live",
+          "event": {
+            "code": "user_signed_up"
+          },
+          "subject": {
+            "authority": "authoritative",
+            "source_subject_id": "user_2abc",
+            "resolution": "resolved"
+          },
+          "origin": {
+            "provider": "clerk",
+            "source_kind": "webhook"
+          }
+        },
+        "identity": {
+          "creates_user": true
+        },
+        "consent": [],
+        "notes": "An email address arrived and NO consent assertion was created. This is the single most tempting shortcut in the program (04)."
+      },
+      "demonstrates_capabilities": [
+        "identity",
+        "live_stream"
+      ]
+    },
+    {
+      "name": "unsupported_session_event_creates_no_consent",
+      "proves": "04: unimplemented session events are not advertised as observed activity",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "session.created",
+          "data": {
+            "user_id": "user_2abc"
+          },
+          "svix_id": "msg_2abd",
+          "svix_signature_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "ignored",
+        "consent": [],
+        "notes": "The connector supports user lifecycle events only. Session payloads create no business event, address or consent."
+      }
+    },
+    {
+      "name": "invalid_svix_signature_rejected_before_persistence",
+      "proves": "09: signature verification precedes any durable write",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "user.created",
+          "data": {
+            "id": "user_2abc"
+          },
+          "svix_id": "msg_2abe",
+          "svix_signature_valid": false
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "rejection_code": "signature_invalid",
+        "notes": "Nothing is stored. The provider retries per its own schedule."
+      }
+    },
+    {
+      "name": "duplicate_svix_id_is_idempotent",
+      "proves": "01: idempotency_key is per (connection, provider_event_id)",
+      "given": {
+        "inbound": {
+          "type": "user.created",
+          "data": {
+            "id": "user_2abc"
+          },
+          "svix_id": "msg_2abc",
+          "svix_signature_valid": true,
+          "delivery_ordinal": 2
+        },
+        "state": {
+          "already_ingested": [
+            "con_clerk:msg_2abc"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "deduplicated"
+      }
+    },
+    {
+      "name": "deletion_propagates",
+      "proves": "03+F13: provider-side deletion removes links, addresses and consent",
+      "given": {
+        "inbound": {
+          "type": "user.deleted",
+          "data": {
+            "id": "user_2abc"
+          },
+          "svix_id": "msg_2ac0",
+          "svix_signature_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "identity": {
+          "link_status": "revoked",
+          "addresses_removed": true,
+          "consent_removed": true
+        }
+      }
+    },
+    {
+      "name": "conflicting_authoritative_claim_quarantines_link",
+      "proves": "03: two authoritative sources disagreeing quarantines the LINK, not the user",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "user.created",
+          "data": {
+            "id": "user_2xyz",
+            "external_id": "user_8842"
+          },
+          "svix_id": "msg_2ac1",
+          "svix_signature_valid": true
+        },
+        "state": {
+          "existing_link": {
+            "provider": "auth0",
+            "authority": "authoritative",
+            "source_subject_id": "auth0|991",
+            "customer_stable_id": "user_8842"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "quarantined",
+        "quarantine": {
+          "disposition": "quarantined",
+          "code": "identity_conflict",
+          "replayable": true,
+          "smallest_repair_action": "Confirm which provider owns identity for user_8842."
+        },
+        "identity": {
+          "creates_user": false,
+          "user_remains_functional": true
+        },
+        "notes": "No automatic winner between two authoritative sources. Precedence rejects weaker claims; it never breaks ties between equals."
+      }
+    },
+    {
+      "name": "same_email_different_person_never_merges",
+      "proves": "03: no email-based merging, ever",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "type": "user.created",
+          "data": {
+            "id": "user_2new",
+            "external_id": "user_9001",
+            "email_addresses": [
+              {
+                "email_address": "ada@example.com"
+              }
+            ]
+          },
+          "svix_id": "msg_2ac2",
+          "svix_signature_valid": true
+        },
+        "state": {
+          "existing_user": {
+            "customer_stable_id": "user_8842",
+            "email": "ada@example.com"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "identity": {
+          "creates_user": true,
+          "merged_with_existing": false
+        },
+        "notes": "Email is a channel address, not an identity. Two separate users result."
+      }
+    }
+  ]
+}

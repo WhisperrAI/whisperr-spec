@@ -1,0 +1,268 @@
+{
+  "$schema": "../../schemas/connector-fixture.schema.json",
+  "version": 1,
+  "provider": "woocommerce",
+  "description": "WooCommerce plugin: secure pairing, backend hooks, durable LOCAL retry queue, HPOS compatibility. Checkout must never wait on Whisperr.",
+  "manifest": {
+    "manifest_version": "2.0.0",
+    "provider": "woocommerce",
+    "display_name": "WooCommerce",
+    "family": "commerce",
+    "environments": [
+      "production",
+      "development"
+    ],
+    "auth": {
+      "mode": "plugin_pairing",
+      "credential_kinds": [
+        "provider_secret"
+      ],
+      "scopes": [
+        {
+          "scope": "pairing_token",
+          "required": true,
+          "why": "binds one store to one workspace"
+        }
+      ],
+      "never_requests": [
+        "wp_admin_credentials",
+        "db_credentials"
+      ]
+    },
+    "capabilities": {
+      "live_stream": true,
+      "history": true,
+      "identity": "namespace_authoritative",
+      "catalog": true,
+      "delivery": false
+    },
+    "correlation": {
+      "occurrence_key_template": "woocommerce:{hook}:{object_id}:{local_seq}"
+    },
+    "freshness": {
+      "catalog_threshold_seconds": 3600
+    },
+    "health": {
+      "signals": [
+        "plugin_heartbeat",
+        "local_queue_depth",
+        "catalog_freshness",
+        "hpos_mode"
+      ],
+      "degraded_when": [
+        "plugin_heartbeat > 30m",
+        "local_queue_depth > 10000"
+      ]
+    },
+    "lifecycle": {
+      "disconnect": true,
+      "revocation": true,
+      "recovery": true,
+      "replay": true,
+      "uninstall_signal": "whisperr/deactivated"
+    },
+    "kill_switch": "provider.woocommerce",
+    "version": "1"
+  },
+  "cases": [
+    {
+      "name": "checkout_never_waits_on_whisperr",
+      "proves": "§6: a customer's checkout is never coupled to Whisperr availability",
+      "given": {
+        "inbound": {
+          "hook": "woocommerce_payment_complete",
+          "object_id": 4471,
+          "local_seq": "991",
+          "whisperr_reachable": false
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "notes": "TIMED TEST. With Whisperr fully unreachable, checkout completes at normal speed. Every call is async/deferred; the event lands in the plugin's local queue."
+      },
+      "demonstrates_capabilities": [
+        "live_stream"
+      ]
+    },
+    {
+      "name": "local_queue_replays_exactly_once_on_recovery",
+      "proves": "09: queued events survive an outage and deliver exactly once",
+      "given": {
+        "inbound": {
+          "local_queue": [
+            {
+              "hook": "woocommerce_payment_complete",
+              "object_id": 4471,
+              "local_seq": "991"
+            }
+          ],
+          "whisperr_reachable": true,
+          "delivery_ordinal": 2
+        },
+        "state": {
+          "already_ingested": [
+            "con_woo:woocommerce_payment_complete:4471:991"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "deduplicated"
+      }
+    },
+    {
+      "name": "hpos_enabled_and_disabled_both_work",
+      "proves": "§5(S35): HPOS compatibility is a supported matrix, not an assumption",
+      "given": {
+        "inbound": {
+          "hook": "woocommerce_payment_complete",
+          "object_id": 4471,
+          "local_seq": "992",
+          "hpos": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "notes": "The same case runs with hpos:false and must produce an identical envelope."
+      }
+    },
+    {
+      "name": "pairing_cannot_be_replayed_to_another_workspace",
+      "proves": "02: pairing is single-use and workspace-bound",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "pairing_token": "pt_7Kd",
+          "target_workspace": "app_OTHER"
+        },
+        "state": {
+          "token_already_used_by": "app_3Qd"
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "rejection_code": "signature_invalid"
+      }
+    },
+    {
+      "name": "purchase_creates_no_consent",
+      "proves": "04: consent is never inferred from a purchase",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "hook": "woocommerce_payment_complete",
+          "object_id": 4471,
+          "billing_email": "ada@example.com",
+          "local_seq": "993"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": []
+      }
+    },
+    {
+      "name": "catalog_projection_is_minimized",
+      "proves": "06: minimized offerable projection from the product hook",
+      "given": {
+        "inbound": {
+          "hook": "woocommerce_update_product",
+          "object_id": 8471,
+          "name": "Trail Runner GTX",
+          "price": "129.00",
+          "currency": "EUR",
+          "stock_status": "instock",
+          "description": "long copy…",
+          "local_seq": "994"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "catalog": {
+          "type": "product",
+          "name": "Trail Runner GTX",
+          "availability": "available",
+          "price": {
+            "amount_minor": 12900,
+            "currency": "EUR"
+          }
+        }
+      },
+      "demonstrates_capabilities": [
+        "catalog"
+      ]
+    },
+    {
+      "name": "deactivation_cleans_up",
+      "proves": "02: uninstall leaves no residual data or scheduled tasks",
+      "given": {
+        "inbound": {
+          "hook": "whisperr/deactivated"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "coverage": {
+          "capability": "live_stream",
+          "state": "available"
+        },
+        "notes": "No orphaned cron entries, no residual options rows, no stranded local queue."
+      }
+    },
+    {
+      "name": "history_import_never_live",
+      "proves": "08: historical order import is not live coverage",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "import": "orders",
+          "historical": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "coverage": {
+          "capability": "history",
+          "state": "validated",
+          "label": "historical"
+        }
+      },
+      "demonstrates_capabilities": [
+        "history"
+      ]
+    },
+    {
+      "name": "namespace_authority_never_overrides_authoritative",
+      "proves": "03: WooCommerce is authoritative inside its own customer namespace and nowhere else",
+      "demonstrates_capabilities": [
+        "identity"
+      ],
+      "negative": true,
+      "given": {
+        "inbound": {
+          "hook": "woocommerce_customer_save",
+          "object_id": 8842001,
+          "billing_email": "ada@example.com",
+          "local_seq": "995"
+        },
+        "state": {
+          "existing_link": {
+            "provider": "clerk",
+            "authority": "authoritative",
+            "customer_stable_id": "user_8842",
+            "source_subject_id": "user_2abc"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "identity": {
+          "creates_user": false,
+          "overrides_authoritative": false,
+          "namespace_link_created": true
+        },
+        "consent": [],
+        "notes": "A Woo customer id is a Woo customer id. It never becomes a claim about the Clerk user, and the billing email creates no consent."
+      }
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/coverage.schema.json",
+  "title": "Whisperr coverage and health states 2.0.0",
+  "$defs": {
+    "capability_state": {
+      "type": "object",
+      "required": ["connection_id", "capability", "state", "label"],
+      "additionalProperties": false,
+      "description": "Tracked per (connection, capability) — a connector is rarely uniformly working.",
+      "properties": {
+        "connection_id": { "type": "string" },
+        "capability": { "enum": ["live_stream", "history", "identity", "catalog", "delivery"] },
+        "state": {
+          "enum": ["available", "wired", "validated", "live", "healthy"],
+          "description": "A mode:test event advances state to at most 'validated'. A history-only capability can NEVER reach 'live'."
+        },
+        "label": { "enum": ["working", "waiting_for_activity", "needs_attention", "historical"] },
+        "smallest_repair_action": {
+          "type": ["string", "null"],
+          "description": "REQUIRED whenever label is needs_attention. Exactly one next thing, not a diagnostic dump."
+        },
+        "advanced_by_mode": { "enum": ["live", "test", "none"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "label": { "const": "needs_attention" } }, "required": ["label"] },
+          "then": { "required": ["smallest_repair_action"], "properties": { "smallest_repair_action": { "type": "string", "minLength": 1 } } }
+        },
+        {
+          "if": { "properties": { "advanced_by_mode": { "const": "test" } }, "required": ["advanced_by_mode"] },
+          "then": { "properties": { "state": { "enum": ["available", "wired", "validated"] } } }
+        }
+      ]
+    },
+    "plan_gate": {
+      "type": "object",
+      "required": ["committed_revision_id", "minimum_universe_met"],
+      "additionalProperties": false,
+      "description": "Plan creation gates ONLY on this. Not on connection count, and not on delivery config.",
+      "properties": {
+        "committed_revision_id": { "type": ["string", "null"] },
+        "minimum_universe_met": { "type": "boolean" },
+        "delivery_configured": { "type": "boolean", "description": "Informational. Never a gate." }
+      }
+    }
+  }
+}

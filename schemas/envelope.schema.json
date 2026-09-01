@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/envelope.schema.json",
+  "title": "Whisperr canonical event envelope 2.0.0",
+  "type": "object",
+  "required": ["envelope_version", "event_id", "app_id", "mode", "event", "subject", "origin", "time", "correlation"],
+  "additionalProperties": false,
+  "properties": {
+    "envelope_version": { "const": "2.0.0" },
+    "event_id": { "type": "string", "minLength": 1 },
+    "app_id": { "type": "string", "minLength": 1 },
+    "mode": { "enum": ["live", "test"] },
+    "event": {
+      "type": "object",
+      "required": ["code", "registration_revision_id", "properties"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "type": "string", "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$" },
+        "registration_revision_id": { "type": "string", "minLength": 1 },
+        "properties": { "type": "object" }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "required": ["authority", "resolution"],
+      "additionalProperties": false,
+      "properties": {
+        "authority": { "$ref": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/identity.schema.json#/$defs/authority_mode" },
+        "source_subject_id": { "type": ["string", "null"] },
+        "customer_stable_id": { "type": ["string", "null"] },
+        "resolution": { "enum": ["resolved", "unresolved", "quarantined"] }
+      }
+    },
+    "origin": {
+      "type": "object",
+      "required": ["connection_id", "provider", "source_kind", "contract_version"],
+      "additionalProperties": false,
+      "properties": {
+        "connection_id": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 },
+        "source_kind": { "enum": ["webhook", "stream", "poll", "sdk", "agent", "manual"] },
+        "provider_event_id": { "type": ["string", "null"] },
+        "contract_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+" }
+      }
+    },
+    "time": {
+      "type": "object",
+      "required": ["occurred_at", "received_at"],
+      "additionalProperties": false,
+      "properties": {
+        "occurred_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" },
+        "received_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" },
+        "source_sequence": { "type": ["string", "null"] }
+      }
+    },
+    "correlation": {
+      "type": "object",
+      "required": ["idempotency_key"],
+      "additionalProperties": false,
+      "properties": {
+        "idempotency_key": { "type": "string", "minLength": 1 },
+        "occurrence_key": {
+          "type": ["string", "null"],
+          "description": "null means this connector cannot derive a stable occurrence key; its events are never correlated (safe default)."
+        }
+      }
+    }
+  }
+}

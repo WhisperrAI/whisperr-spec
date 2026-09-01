@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/catalog.schema.json",
+  "title": "Whisperr catalog projection 2.0.0",
+  "$defs": {
+    "item": {
+      "type": "object",
+      "required": ["source_item_id", "connection_id", "type", "name", "availability", "fresh_as_of"],
+      "additionalProperties": false,
+      "description": "The MINIMIZED offerable projection. Nothing from the source item beyond this is stored.",
+      "properties": {
+        "source_item_id": { "type": "string", "minLength": 1 },
+        "connection_id": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["product", "plan", "content", "location", "offer"] },
+        "name": { "type": "string", "minLength": 1 },
+        "url": { "type": ["string", "null"] },
+        "availability": {
+          "enum": ["available", "limited", "unavailable", "unknown"],
+          "description": "Becomes 'unknown' automatically past the connector's freshness threshold. 'unknown' and 'unavailable' are NEVER candidates."
+        },
+        "price": {
+          "type": ["object", "null"],
+          "required": ["amount_minor", "currency"],
+          "additionalProperties": false,
+          "properties": {
+            "amount_minor": { "type": "integer" },
+            "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+          }
+        },
+        "category": { "type": ["string", "null"] },
+        "location": { "type": ["string", "null"] },
+        "approved_fields": { "type": "object", "description": "Explicit per-app allowlist only." },
+        "fresh_as_of": { "type": "string" },
+        "source_version": { "type": ["string", "null"] }
+      }
+    },
+    "candidate_set": {
+      "type": "object",
+      "required": ["deterministic", "items"],
+      "additionalProperties": false,
+      "description": "The COMPLETE universe of items generation may reference. Generation cannot name anything outside it because it is never given anything outside it.",
+      "properties": {
+        "deterministic": { "const": true },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+      }
+    }
+  }
+}

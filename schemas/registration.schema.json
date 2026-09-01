@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/registration.schema.json",
+  "title": "Whisperr registration revision 2.0.0",
+  "type": "object",
+  "required": [
+    "revision_id",
+    "app_id",
+    "state",
+    "created_by",
+    "events"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "revision_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "app_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "enum": [
+        "draft",
+        "validating",
+        "committed",
+        "failed",
+        "superseded"
+      ]
+    },
+    "parent_revision_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "created_by": {
+      "type": "object",
+      "required": [
+        "executor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "executor": {
+          "enum": [
+            "mcp",
+            "pr_agent",
+            "cli",
+            "wizard",
+            "console"
+          ],
+          "description": "Audit only. Carries NO semantic difference — a wizard revision behaves identically to an MCP one (X20 parity)."
+        },
+        "actor_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "payload_schema",
+          "sources"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reasoning": {
+            "type": "string"
+          },
+          "payload_schema": {
+            "type": "object",
+            "description": "The allowlist. Fields outside it are dropped BEFORE persistence."
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "One event MAY have many sources — correlated by occurrence_key, not duplicated."
+          }
+        }
+      }
+    },
+    "mappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "connection_id",
+          "provider_signal",
+          "event_code"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "connection_id": {
+            "type": "string"
+          },
+          "provider_signal": {
+            "type": "string"
+          },
+          "event_code": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "test_events_seen": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "event_code",
+              "reason"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "event_code": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "mapping_approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "connection_id",
+            "auth_version",
+            "approved_by",
+            "approval_hash"
+          ],
+          "properties": {
+            "connection_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "auth_version": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "approved_by": {
+              "type": "string",
+              "minLength": 1
+            },
+            "approval_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "description": "Trusted native-provider setup records explicit semantic approval. This is not a test event, successful transport, identity, live or health proof; generic executors cannot submit it to bypass validation."
+        }
+      }
+    },
+    "committed_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

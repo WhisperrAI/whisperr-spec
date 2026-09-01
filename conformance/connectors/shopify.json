@@ -1,0 +1,539 @@
+{
+  "$schema": "../../schemas/connector-fixture.schema.json",
+  "version": 1,
+  "provider": "shopify",
+  "description": "Shopify app: scoped offline access, standard + compliance webhooks, storefront pixel, catalog sync with repair. Authoritative ONLY within its own customer namespace.",
+  "manifest": {
+    "manifest_version": "2.0.0",
+    "provider": "shopify",
+    "display_name": "Shopify",
+    "family": "commerce",
+    "environments": [
+      "production",
+      "development"
+    ],
+    "auth": {
+      "mode": "oauth",
+      "credential_kinds": [
+        "oauth_token",
+        "provider_secret"
+      ],
+      "scopes": [
+        {
+          "scope": "read_orders",
+          "required": true,
+          "why": "order and checkout events"
+        },
+        {
+          "scope": "read_products",
+          "required": true,
+          "why": "catalog projection"
+        },
+        {
+          "scope": "read_inventory",
+          "required": true,
+          "why": "availability — an out-of-stock item must never be offered"
+        },
+        {
+          "scope": "read_customers",
+          "required": false,
+          "why": "namespace identity links"
+        },
+        {
+          "scope": "write_pixels",
+          "required": false,
+          "why": "install the storefront pixel extension"
+        },
+        {
+          "scope": "read_customer_events",
+          "required": false,
+          "why": "receive storefront pixel events"
+        }
+      ],
+      "never_requests": [
+        "write_products",
+        "write_orders",
+        "write_customers"
+      ],
+      "oauth": {
+        "redirect_uri": "https://api.whisperr.net/v1/connections/shopify/oauth/callback",
+        "app_identifier": "417240809473",
+        "token_exchange": "client_secret",
+        "registration_status": "registered_unpublished",
+        "clients": [
+          {
+            "install_mode": "default",
+            "client_id": "9182e42a56d4cca402f5e3335ba88cd3",
+            "environment": null
+          }
+        ],
+        "authorize_url_template": null,
+        "redirect_uri_operational": false
+      },
+      "granted_scopes": [
+        "read_orders",
+        "read_products"
+      ],
+      "scope_deltas": {
+        "pending_grant": [
+          {
+            "scope": "read_inventory",
+            "closed_by": "S34",
+            "note": "shopify.app.toml requests read_orders,read_products only. Availability checks (the out-of-stock case) need read_inventory. S34 amends the toml and deploys a new draft before any install test."
+          },
+          {
+            "scope": "write_pixels",
+            "closed_by": "S34",
+            "note": "Optional, for the storefront pixel extension. extension_directories is still empty; grant it when the pixel is implemented."
+          },
+          {
+            "scope": "read_customer_events",
+            "closed_by": "S34",
+            "note": "Optional, pairs with write_pixels to receive storefront pixel events."
+          },
+          {
+            "scope": "read_customers",
+            "closed_by": "S34",
+            "note": "Optional in the toml already; listed for completeness so the ledger is the single view of the delta."
+          }
+        ]
+      }
+    },
+    "capabilities": {
+      "live_stream": true,
+      "history": false,
+      "identity": "namespace_authoritative",
+      "catalog": true,
+      "delivery": false
+    },
+    "correlation": {
+      "occurrence_key_template": "shopify:{topic}:{provider_event_id}"
+    },
+    "freshness": {
+      "catalog_threshold_seconds": 3600
+    },
+    "health": {
+      "signals": [
+        "webhook_receipt_lag",
+        "auth_valid",
+        "catalog_freshness",
+        "scope_drift",
+        "error_rate"
+      ],
+      "degraded_when": [
+        "auth_valid == false",
+        "webhook_receipt_lag > 15m",
+        "catalog_freshness > 1h"
+      ]
+    },
+    "lifecycle": {
+      "disconnect": true,
+      "revocation": true,
+      "recovery": true,
+      "replay": true,
+      "uninstall_signal": "app/uninstalled",
+      "scope_change_signal": "app/scopes_update"
+    },
+    "kill_switch": "provider.shopify",
+    "version": "1"
+  },
+  "cases": [
+    {
+      "name": "order_paid_becomes_event",
+      "proves": "01: standard webhook → canonical envelope",
+      "given": {
+        "inbound": {
+          "topic": "orders/paid",
+          "x_shopify_webhook_id": "b1e2",
+          "order_id": 4471,
+          "customer": {
+            "id": 8842001
+          },
+          "total_price": "129.00",
+          "currency": "EUR",
+          "created_at": "2026-08-31T09:14:02.117Z",
+          "hmac_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "mode": "live",
+          "event": {
+            "code": "order_paid"
+          },
+          "subject": {
+            "authority": "namespace_authoritative",
+            "source_subject_id": "8842001"
+          },
+          "origin": {
+            "provider": "shopify",
+            "source_kind": "webhook"
+          },
+          "correlation": {
+            "occurrence_key": "shopify:orders/paid:b1e2"
+          }
+        }
+      },
+      "demonstrates_capabilities": [
+        "live_stream"
+      ],
+      "requires_scopes": [
+        "read_orders"
+      ]
+    },
+    {
+      "name": "namespace_authority_never_overrides_authoritative",
+      "proves": "03: namespace_authoritative is authoritative INSIDE its namespace and nowhere else",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "topic": "customers/update",
+          "x_shopify_webhook_id": "b1e3",
+          "customer": {
+            "id": 8842001,
+            "email": "ada@example.com"
+          },
+          "hmac_valid": true
+        },
+        "state": {
+          "existing_link": {
+            "provider": "clerk",
+            "authority": "authoritative",
+            "customer_stable_id": "user_8842",
+            "source_subject_id": "user_2abc"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "identity": {
+          "creates_user": false,
+          "overrides_authoritative": false,
+          "namespace_link_created": true
+        },
+        "notes": "Shopify may say 'this is Shopify customer 8842001'. It may NOT say 'and that is Clerk user_2abc' without the customer's own stable id in the payload."
+      },
+      "demonstrates_capabilities": [
+        "identity"
+      ],
+      "requires_scopes": [
+        "read_customers"
+      ]
+    },
+    {
+      "name": "purchase_creates_no_consent",
+      "proves": "04: consent is never inferred from a purchase or checkout",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "topic": "orders/paid",
+          "x_shopify_webhook_id": "b1e4",
+          "customer": {
+            "email": "ada@example.com",
+            "accepts_marketing": null
+          },
+          "hmac_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": []
+      },
+      "requires_scopes": [
+        "read_orders"
+      ]
+    },
+    {
+      "name": "explicit_marketing_optin_is_an_assertion",
+      "proves": "04: an explicit opt-in IS consent with basis explicit_user_action",
+      "given": {
+        "inbound": {
+          "topic": "customers/update",
+          "x_shopify_webhook_id": "b1e5",
+          "customer": {
+            "id": 8842001,
+            "email_marketing_consent": {
+              "state": "subscribed",
+              "consent_updated_at": "2026-08-30T12:00:00.000Z"
+            }
+          },
+          "hmac_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": [
+          {
+            "channel": "email",
+            "status": "opted_in",
+            "basis": "explicit_user_action",
+            "source": {
+              "connection_id": "con_shopify",
+              "provider": "shopify"
+            },
+            "asserted_at": "2026-08-30T12:00:00.000Z"
+          }
+        ],
+        "notes": "The distinction that matters: the shopper acted. Contrast with the purchase case above."
+      },
+      "requires_scopes": [
+        "read_customers"
+      ]
+    },
+    {
+      "name": "catalog_projection_is_minimized",
+      "proves": "06: only the offerable projection is stored",
+      "given": {
+        "inbound": {
+          "topic": "products/update",
+          "x_shopify_webhook_id": "b1e6",
+          "product": {
+            "id": 8471,
+            "title": "Trail Runner GTX",
+            "handle": "trail-runner-gtx",
+            "status": "active",
+            "variants": [
+              {
+                "price": "129.00",
+                "inventory_quantity": 12
+              }
+            ],
+            "body_html": "<p>long marketing copy…</p>",
+            "vendor": "ACME",
+            "tags": "internal-sku-9912"
+          }
+        },
+        "state": {
+          "currency": "EUR"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "catalog": {
+          "source_item_id": "gid://shopify/Product/8471",
+          "type": "product",
+          "name": "Trail Runner GTX",
+          "availability": "available",
+          "price": {
+            "amount_minor": 12900,
+            "currency": "EUR"
+          }
+        },
+        "notes": "body_html, vendor and tags are NOT stored."
+      },
+      "demonstrates_capabilities": [
+        "catalog"
+      ],
+      "requires_scopes": [
+        "read_products"
+      ]
+    },
+    {
+      "name": "out_of_stock_is_never_offered",
+      "proves": "06: history ranks, it never proves availability",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "topic": "products/update",
+          "x_shopify_webhook_id": "b1e7",
+          "product": {
+            "id": 8471,
+            "status": "active",
+            "variants": [
+              {
+                "inventory_quantity": 0
+              }
+            ]
+          }
+        },
+        "state": {
+          "user_purchase_history": [
+            "gid://shopify/Product/8471",
+            "gid://shopify/Product/8471",
+            "gid://shopify/Product/8471",
+            "gid://shopify/Product/8471",
+            "gid://shopify/Product/8471",
+            "gid://shopify/Product/8471",
+            "gid://shopify/Product/8471",
+            "gid://shopify/Product/8471",
+            "gid://shopify/Product/8471",
+            "gid://shopify/Product/8471",
+            "gid://shopify/Product/8471",
+            "gid://shopify/Product/8471"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "catalog": {
+          "availability": "unavailable",
+          "is_candidate": false
+        },
+        "notes": "Bought monthly for a year. Still not offered, because today it is out of stock."
+      },
+      "requires_scopes": [
+        "read_products",
+        "read_inventory"
+      ]
+    },
+    {
+      "name": "stale_catalog_becomes_unknown_and_suppresses",
+      "proves": "06: past the freshness threshold, availability collapses to unknown",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "catalog_last_synced": "2026-08-31T06:00:00.000Z",
+          "now": "2026-08-31T09:14:02.117Z"
+        }
+      },
+      "expect": {
+        "outcome": "suppressed",
+        "catalog": {
+          "availability": "unknown",
+          "is_candidate": false
+        },
+        "quarantine": {
+          "disposition": "suppressed",
+          "code": "catalog_uncertain",
+          "replayable": true
+        },
+        "notes": "The OFFER is suppressed. The message still sends if it can say something useful without naming an item."
+      }
+    },
+    {
+      "name": "uninstall_then_reinstall_is_clean",
+      "proves": "02: uninstall/reinstall leaves no orphans and no duplicates",
+      "given": {
+        "inbound": {
+          "sequence": [
+            {
+              "topic": "app/uninstalled",
+              "x_shopify_webhook_id": "b1e8",
+              "hmac_valid": true
+            },
+            {
+              "topic": "app/installed",
+              "x_shopify_webhook_id": "b1e9",
+              "hmac_valid": true
+            }
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "coverage": {
+          "capability": "live_stream",
+          "state": "wired"
+        },
+        "notes": "After reinstall: no orphaned catalog rows, no duplicated identity links, no double-counted events."
+      }
+    },
+    {
+      "name": "scope_change_surfaces_one_repair_action",
+      "proves": "08: degradation names exactly one next step",
+      "given": {
+        "inbound": {
+          "topic": "app/scopes_update",
+          "x_shopify_webhook_id": "b1ea",
+          "removed": [
+            "read_products"
+          ],
+          "hmac_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "coverage": {
+          "capability": "catalog",
+          "state": "wired",
+          "label": "needs_attention",
+          "smallest_repair_action": "Re-authorize Shopify to restore read_products — catalog sync is paused."
+        },
+        "notes": "live_stream stays healthy. Capability state is per-capability precisely so one lost scope does not black out the connector."
+      }
+    },
+    {
+      "name": "invalid_hmac_rejected",
+      "proves": "09: rejection precedes persistence",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "topic": "orders/paid",
+          "x_shopify_webhook_id": "b1eb",
+          "hmac_valid": false
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "rejection_code": "signature_invalid"
+      }
+    },
+    {
+      "name": "compliance_webhooks_answered",
+      "proves": "§8: mandatory compliance webhooks are implemented",
+      "given": {
+        "inbound": {
+          "topic": "customers/data_request",
+          "x_shopify_webhook_id": "b1ec",
+          "hmac_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "notes": "customers/data_request, customers/redact and shop/redact all respond correctly. Required for app review (blocker B1)."
+      }
+    },
+    {
+      "name": "pixel_event_uses_the_same_envelope",
+      "proves": "01: the storefront pixel extension is a source, not a parallel system",
+      "given": {
+        "inbound": {
+          "source_kind": "sdk",
+          "pixel_event": "checkout_started",
+          "occurred_at": "2026-08-31T09:14:02.117Z",
+          "claimed_customer_id": "8842001"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "origin": {
+            "provider": "shopify",
+            "source_kind": "sdk"
+          },
+          "event": {
+            "code": "checkout_started"
+          },
+          "subject": {
+            "authority": "anonymous"
+          }
+        },
+        "notes": "Browser pixel claims are untrusted and stay anonymous, even if a customer ID matches a known server-side identity. They do not prove authenticated live order transport or permit personalized dispatch."
+      },
+      "requires_scopes": [
+        "write_pixels",
+        "read_customer_events"
+      ]
+    },
+    {
+      "name": "historical_order_import_not_advertised",
+      "proves": "08: unimplemented history does not appear as an available capability",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "import": "orders",
+          "range": "2025-01-01..2026-08-01",
+          "historical": true
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "notes": "S34 implements current catalog synchronization and live webhooks, not historical order backfill. History remains false until a tested importer exists; it can never promote live_stream."
+      },
+      "requires_scopes": [
+        "read_orders"
+      ]
+    }
+  ]
+}

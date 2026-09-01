@@ -1,0 +1,398 @@
+{
+  "$schema": "../../schemas/connector-fixture.schema.json",
+  "version": 1,
+  "provider": "supabase",
+  "description": "Supabase DB + Auth. Least-privilege OAuth, explicit table/field approval, outbox so customer transactions never depend on Whisperr.",
+  "manifest": {
+    "manifest_version": "2.0.0",
+    "provider": "supabase",
+    "display_name": "Supabase",
+    "family": "database",
+    "environments": [
+      "production",
+      "development"
+    ],
+    "auth": {
+      "mode": "oauth",
+      "credential_kinds": [
+        "oauth_token"
+      ],
+      "scopes": [
+        {
+          "scope": "projects:read",
+          "required": true,
+          "why": "project selection"
+        },
+        {
+          "scope": "database:read",
+          "required": true,
+          "why": "inspect approved project schema metadata; data access still requires explicit project, table and field approval"
+        },
+        {
+          "scope": "database:write",
+          "required": true,
+          "why": "execute approved SQL for the private integration schema/outbox and triggers attached only to approved source tables; ID-only auth.users projection establishes identity. Never mutate customer application rows or columns. The management query scope is broad: the reviewed generated SQL is the narrower application boundary."
+        }
+      ],
+      "never_requests": [
+        "service_role_key",
+        "secrets:read"
+      ],
+      "oauth": {
+        "redirect_uri": "https://api.whisperr.net/v1/connections/supabase/oauth/callback",
+        "app_identifier": null,
+        "token_exchange": "client_secret",
+        "registration_status": "registered_unpublished",
+        "clients": [
+          {
+            "install_mode": "default",
+            "client_id": "c972b3a3-8645-4a65-883e-5614b3f31d9b",
+            "environment": null
+          }
+        ],
+        "authorize_url_template": null,
+        "redirect_uri_operational": false
+      },
+      "granted_scopes": [
+        "database:read",
+        "database:write",
+        "edge_functions:read",
+        "edge_functions:write",
+        "analytics:read",
+        "analytics:write",
+        "projects:read"
+      ],
+      "scope_deltas": {
+        "overgranted": [
+          {
+            "scope": "edge_functions:read",
+            "action": "trim",
+            "owner": "George",
+            "note": "No S30 requirement reads or deploys edge functions. Least privilege: trim from the OAuth app."
+          },
+          {
+            "scope": "edge_functions:write",
+            "action": "trim",
+            "owner": "George",
+            "note": "Write access to customer edge functions is well beyond an observation connector. Trim."
+          },
+          {
+            "scope": "analytics:read",
+            "action": "trim",
+            "owner": "George",
+            "note": "Whisperr derives its own coverage from ingested events; it does not read Supabase analytics. Trim."
+          },
+          {
+            "scope": "analytics:write",
+            "action": "trim",
+            "owner": "George",
+            "note": "Whisperr never writes customer analytics. Trim."
+          }
+        ],
+        "pending_grant": []
+      }
+    },
+    "capabilities": {
+      "live_stream": true,
+      "history": true,
+      "identity": "authoritative",
+      "catalog": true,
+      "delivery": false
+    },
+    "correlation": {
+      "occurrence_key_template": "supabase:{table}:{pk}:{op}:{source_version}"
+    },
+    "freshness": {
+      "catalog_threshold_seconds": 3600
+    },
+    "health": {
+      "signals": [
+        "outbox_lag",
+        "auth_valid",
+        "schema_drift",
+        "error_rate"
+      ],
+      "degraded_when": [
+        "auth_valid == false",
+        "outbox_lag > 10m",
+        "schema_drift == true"
+      ]
+    },
+    "lifecycle": {
+      "disconnect": true,
+      "revocation": true,
+      "recovery": true,
+      "replay": true
+    },
+    "kill_switch": "provider.supabase",
+    "version": "1"
+  },
+  "cases": [
+    {
+      "name": "approved_row_change_becomes_event",
+      "proves": "01: an approved row change produces a canonical envelope with occurrence-time ordering",
+      "given": {
+        "inbound": {
+          "table": "subscriptions",
+          "op": "UPDATE",
+          "pk": "sub_991",
+          "status": "past_due",
+          "committed_at": "2026-08-31T09:14:02.117Z",
+          "outbox_seq": "000431",
+          "signature_valid": true
+        },
+        "state": {
+          "approved_tables": [
+            "subscriptions"
+          ],
+          "approved_fields": {
+            "subscriptions": [
+              "status"
+            ]
+          },
+          "mapping": {
+            "subscriptions.status=past_due": "payment_failed"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "mode": "live",
+          "event": {
+            "code": "payment_failed"
+          },
+          "origin": {
+            "provider": "supabase",
+            "source_kind": "stream"
+          },
+          "time": {
+            "occurred_at": "2026-08-31T09:14:02.117Z"
+          },
+          "correlation": {
+            "occurrence_key": "supabase:subscriptions:sub_991:UPDATE:000431"
+          }
+        },
+        "coverage": {
+          "capability": "live_stream",
+          "state": "live"
+        }
+      },
+      "demonstrates_capabilities": [
+        "live_stream"
+      ]
+    },
+    {
+      "name": "unapproved_table_produces_nothing",
+      "proves": "02+03: nothing outside the customer's explicit approval is ever observed",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "table": "internal_audit_log",
+          "op": "INSERT",
+          "pk": "a_1",
+          "signature_valid": true
+        },
+        "state": {
+          "approved_tables": [
+            "subscriptions"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "ignored",
+        "envelope": {},
+        "notes": "Never watch every table. An unapproved table is not an error and not an event — it is simply not observed."
+      }
+    },
+    {
+      "name": "unapproved_field_is_dropped_before_persistence",
+      "proves": "01: only allowlisted fields are durably stored",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "table": "subscriptions",
+          "op": "UPDATE",
+          "pk": "sub_991",
+          "status": "past_due",
+          "internal_note": "customer called, angry",
+          "signature_valid": true
+        },
+        "state": {
+          "approved_tables": [
+            "subscriptions"
+          ],
+          "approved_fields": {
+            "subscriptions": [
+              "status"
+            ]
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event": {
+            "properties": {
+              "status": "past_due"
+            }
+          }
+        },
+        "notes": "internal_note is dropped BEFORE persistence, not filtered at read time."
+      }
+    },
+    {
+      "name": "supabase_auth_user_is_authoritative",
+      "proves": "03: Supabase Auth may create an identity link",
+      "given": {
+        "inbound": {
+          "type": "auth.user.created",
+          "sub": "7c9e…",
+          "customer_stable_id": "user_8842",
+          "email": "ada@example.com",
+          "signature_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "identity": {
+          "creates_user": true,
+          "authority": "authoritative",
+          "source_subject_id": "7c9e…"
+        },
+        "consent": [],
+        "notes": "An email arrived. No consent assertion was created. (04)"
+      },
+      "demonstrates_capabilities": [
+        "identity"
+      ]
+    },
+    {
+      "name": "outbox_replays_after_whisperr_outage",
+      "proves": "09: customer transactions never depend on Whisperr; queued rows replay exactly once",
+      "given": {
+        "inbound": {
+          "table": "subscriptions",
+          "op": "UPDATE",
+          "pk": "sub_991",
+          "outbox_seq": "000431",
+          "delivery_ordinal": 2,
+          "signature_valid": true
+        },
+        "state": {
+          "already_ingested_outbox_seq": [
+            "000431"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "deduplicated",
+        "notes": "Idempotency is per (connection, outbox_seq). Replay is safe by construction."
+      }
+    },
+    {
+      "name": "schema_change_degrades_not_fails",
+      "proves": "08: a schema change surfaces one smallest repair action, not a hard failure",
+      "given": {
+        "inbound": {
+          "schema_drift": {
+            "table": "subscriptions",
+            "removed_column": "status"
+          },
+          "signature_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "quarantined",
+        "quarantine": {
+          "disposition": "quarantined",
+          "code": "schema_violation",
+          "replayable": true,
+          "smallest_repair_action": "Re-approve the subscriptions mapping — the status column was removed."
+        },
+        "coverage": {
+          "capability": "live_stream",
+          "state": "wired",
+          "label": "needs_attention"
+        }
+      }
+    },
+    {
+      "name": "service_role_key_never_requested",
+      "proves": "02: auth.never_requests is a fixture-checked commitment",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "authorization_request": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "notes": "The built authorization request contains none of never_requests. Asserted against the request, not the docs."
+      }
+    },
+    {
+      "name": "catalog_from_approved_table_mapping",
+      "proves": "06: an approved table mapping yields a minimized offerable projection",
+      "given": {
+        "inbound": {
+          "table": "plans",
+          "op": "UPDATE",
+          "pk": "plan_pro",
+          "name": "Pro",
+          "price_cents": 4900,
+          "currency": "EUR",
+          "active": true,
+          "signature_valid": true
+        },
+        "state": {
+          "catalog_mapping": {
+            "plans": {
+              "type": "plan",
+              "name": "name",
+              "availability_from": "active"
+            }
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "catalog": {
+          "type": "plan",
+          "name": "Pro",
+          "availability": "available",
+          "price": {
+            "amount_minor": 4900,
+            "currency": "EUR"
+          }
+        }
+      },
+      "demonstrates_capabilities": [
+        "catalog"
+      ]
+    },
+    {
+      "name": "history_import_never_reports_live",
+      "proves": "08: a historical import can reach validated, never live",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "import": "subscriptions",
+          "rows": 1240,
+          "historical": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "coverage": {
+          "capability": "history",
+          "state": "validated",
+          "label": "historical"
+        }
+      },
+      "demonstrates_capabilities": [
+        "history"
+      ]
+    }
+  ]
+}

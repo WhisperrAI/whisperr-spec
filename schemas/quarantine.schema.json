@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/quarantine.schema.json",
+  "title": "Whisperr error and quarantine taxonomy 2.0.0",
+  "$defs": {
+    "disposition": {
+      "enum": ["completed", "retrying", "quarantined", "dead_lettered", "suppressed"],
+      "description": "Every ACKNOWLEDGED delivery is in exactly one of these. Never silently missing."
+    },
+    "rejection_code": {
+      "enum": ["signature_invalid", "timestamp_out_of_window", "payload_too_large", "content_type_invalid", "contract_version_unsupported"],
+      "description": "Refused BEFORE acknowledge. Nothing durable is written."
+    },
+    "quarantine_code": {
+      "enum": ["identity_conflict", "unregistered_event_code", "schema_violation", "mapping_ambiguous", "catalog_reference_invalid", "consent_missing_for_required_channel"]
+    },
+    "retry_code": { "enum": ["transient_provider_error", "rate_limited", "downstream_unavailable", "lease_lost"] },
+    "dead_letter_code": { "enum": ["retry_exhausted", "permanently_malformed"] },
+    "suppression_code": {
+      "enum": ["test_mode", "consent_blocked", "catalog_uncertain", "expired", "intervention_paused"],
+      "description": "Intentional and NOT a failure. Counted and visible, never reported as an error."
+    },
+    "entry": {
+      "type": "object",
+      "required": ["disposition", "code", "connection_id", "replayable"],
+      "additionalProperties": false,
+      "properties": {
+        "disposition": { "$ref": "#/$defs/disposition" },
+        "code": { "type": "string", "minLength": 1 },
+        "connection_id": { "type": "string" },
+        "occurrence_refs": { "type": "array", "items": { "type": "string" } },
+        "smallest_repair_action": { "type": ["string", "null"] },
+        "replayable": { "type": "boolean" },
+        "occurred_at": { "type": "string" }
+      },
+      "allOf": [{
+        "if": { "properties": { "disposition": { "const": "quarantined" } }, "required": ["disposition"] },
+        "then": {
+          "required": ["smallest_repair_action"],
+          "properties": { "smallest_repair_action": { "type": "string", "minLength": 1 }, "replayable": { "const": true } },
+          "description": "Every quarantine has a repair path AND a replay path. A quarantine with no way out is a bug, not a state."
+        }
+      }]
+    }
+  }
+}

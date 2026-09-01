@@ -1,0 +1,232 @@
+{
+  "$schema": "../../schemas/connector-fixture.schema.json",
+  "version": 1,
+  "provider": "revenuecat",
+  "description": "RevenueCat via signed webhooks. Stable app_user_id mapping; deterministic aliases ONLY — an ambiguous alias quarantines rather than guessing.",
+  "manifest": {
+    "manifest_version": "2.0.0",
+    "provider": "revenuecat",
+    "display_name": "RevenueCat",
+    "family": "billing",
+    "environments": [
+      "production",
+      "development"
+    ],
+    "auth": {
+      "mode": "signed_webhook",
+      "credential_kinds": [
+        "provider_secret"
+      ],
+      "scopes": [
+        {
+          "scope": "webhook",
+          "required": true,
+          "why": "subscription lifecycle events"
+        }
+      ],
+      "never_requests": [
+        "api_v1_write"
+      ]
+    },
+    "capabilities": {
+      "live_stream": true,
+      "history": false,
+      "identity": "resolve_only",
+      "catalog": false,
+      "delivery": false
+    },
+    "correlation": {
+      "occurrence_key_template": "revenuecat:{event_id}"
+    },
+    "health": {
+      "signals": [
+        "webhook_receipt_lag",
+        "signature_valid",
+        "alias_ambiguity_rate"
+      ],
+      "degraded_when": [
+        "signature_valid == false",
+        "webhook_receipt_lag > 15m"
+      ]
+    },
+    "lifecycle": {
+      "disconnect": true,
+      "revocation": true,
+      "recovery": true,
+      "replay": true
+    },
+    "kill_switch": "provider.revenuecat",
+    "version": "1"
+  },
+  "cases": [
+    {
+      "name": "renewal_resolves_via_stable_app_user_id",
+      "proves": "03: resolve_only via a deterministic id",
+      "given": {
+        "inbound": {
+          "event": {
+            "id": "rc_evt_1",
+            "type": "RENEWAL",
+            "app_user_id": "user_8842",
+            "event_timestamp_ms": 1788412442117
+          },
+          "signature_valid": true
+        },
+        "state": {
+          "existing_link": {
+            "customer_stable_id": "user_8842"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "mode": "live",
+          "event": {
+            "code": "subscription_renewed"
+          },
+          "subject": {
+            "authority": "resolve_only",
+            "customer_stable_id": "user_8842",
+            "resolution": "resolved"
+          },
+          "time": {
+            "occurred_at": "2026-08-31T09:14:02.117Z"
+          }
+        },
+        "identity": {
+          "creates_user": false
+        }
+      },
+      "demonstrates_capabilities": [
+        "live_stream",
+        "identity"
+      ]
+    },
+    {
+      "name": "ambiguous_alias_quarantines_the_link",
+      "proves": "03: deterministic aliases only — ambiguity quarantines, never guesses",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "event": {
+            "id": "rc_evt_2",
+            "type": "INITIAL_PURCHASE",
+            "app_user_id": "$RCAnonymousID:8f2c",
+            "aliases": [
+              "user_8842",
+              "user_9001"
+            ]
+          },
+          "signature_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "quarantined",
+        "quarantine": {
+          "disposition": "quarantined",
+          "code": "identity_conflict",
+          "replayable": true,
+          "smallest_repair_action": "Confirm which app_user_id owns RevenueCat subject $RCAnonymousID:8f2c."
+        },
+        "identity": {
+          "creates_user": false,
+          "user_remains_functional": true
+        },
+        "notes": "Two candidate aliases is not a 51/49 decision. It is a question for a human."
+      }
+    },
+    {
+      "name": "anonymous_id_alone_does_not_create_a_user",
+      "proves": "03: resolve_only never creates",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "event": {
+            "id": "rc_evt_3",
+            "type": "INITIAL_PURCHASE",
+            "app_user_id": "$RCAnonymousID:9a10"
+          },
+          "signature_valid": true
+        },
+        "state": {
+          "existing_link": null
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "subject": {
+            "resolution": "unresolved"
+          }
+        },
+        "identity": {
+          "creates_user": false
+        }
+      }
+    },
+    {
+      "name": "purchase_creates_no_consent",
+      "proves": "04: consent is never inferred from a purchase",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "event": {
+            "id": "rc_evt_4",
+            "type": "INITIAL_PURCHASE",
+            "app_user_id": "user_8842",
+            "subscriber_attributes": {
+              "$email": {
+                "value": "ada@example.com"
+              }
+            }
+          },
+          "signature_valid": true
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": []
+      }
+    },
+    {
+      "name": "duplicate_event_id_is_idempotent",
+      "proves": "01: at-least-once delivery collapses",
+      "given": {
+        "inbound": {
+          "event": {
+            "id": "rc_evt_1",
+            "type": "RENEWAL"
+          },
+          "signature_valid": true,
+          "delivery_ordinal": 2
+        },
+        "state": {
+          "already_ingested": [
+            "con_revenuecat:rc_evt_1"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "deduplicated"
+      }
+    },
+    {
+      "name": "unauthorized_webhook_rejected",
+      "proves": "09: authorization precedes persistence",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "event": {
+            "id": "rc_evt_5"
+          },
+          "signature_valid": false
+        }
+      },
+      "expect": {
+        "outcome": "rejected",
+        "rejection_code": "signature_invalid"
+      }
+    }
+  ]
+}

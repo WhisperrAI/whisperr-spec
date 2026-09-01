@@ -1,0 +1,12 @@
+{
+  "name": "whisperr-spec-validation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test schema-validation.test.mjs",
+    "validate": "python3 validate.py"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0"
+  }
+}
