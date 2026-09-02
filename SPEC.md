@@ -74,7 +74,8 @@ PostHog project key, not a secret.
 ```
 
 - `external_user_id` (string, required).
-- `traits` (object, optional) — omit when empty.
+- `traits` (object, optional) — omit when empty. Free-form apart from the
+  [reserved keys](#reserved-trait-keys) below.
 - `preferred_channel` (string, optional) — one of `email` | `sms` | `push`.
 - `channels` (array, optional) — each item:
   - `channel` (string, required) — `email` | `sms` | `push`. **The wire field is
@@ -86,6 +87,40 @@ PostHog project key, not a secret.
 
 Convenience shortcuts in the SDK APIs (`email` / `phone` / `pushToken`) expand to
 opted-in `email` / `sms` / `push` channels respectively.
+
+### Reserved trait keys
+
+`traits` is free-form, but two keys are **reserved**: the engine reads them to
+decide *when* and *in which language* to reach the user.
+
+| Key | Format | Used for |
+|---|---|---|
+| `timezone` | IANA tz database name — `Europe/Berlin`, `America/Sao_Paulo` | Quiet hours and send timing. Absent → the engine evaluates them in UTC (a 3 am send for everyone outside UTC). The engine also accepts the legacy aliases `time_zone` / `tz`, checked in that order; SDKs send `timezone`. |
+| `locale` | BCP 47 language tag — `de-DE`, `pt-BR`, `zh-Hans-CN` | Message language. |
+
+- **Client SDKs populate both by default.** On every `identify()`, the web,
+  React Native, Flutter, and Swift SDKs fill in the device's values
+  (`Intl.DateTimeFormat().resolvedOptions().timeZone` / `navigator.language`,
+  `TimeZone.current` / `Locale.current`, the platform locale, …) whenever the
+  runtime can provide them. Server-side SDKs never guess: on a backend the
+  process locale and zone are not the user's.
+- **Caller-supplied values always win.** A `traits.timezone` / `traits.locale`
+  (or a legacy `time_zone` / `tz`) passed to `identify()` is sent verbatim, and
+  the SDK adds no default for that key.
+- **No value, no key.** An SDK that cannot obtain a value omits the key rather
+  than sending a guess — never a wrong zone. Flutter cannot obtain an IANA name
+  without a plugin (`DateTime.timeZoneName` is an abbreviation), so it sends
+  `timezone_offset_minutes` (integer minutes east of UTC at identify time, e.g.
+  `120` for Berlin in summer) instead of `timezone`; the engine does not read
+  that key yet.
+- Both keys travel **inside `traits`** — never top-level. The server rejects
+  unknown top-level fields, so a top-level `timezone` 400s the whole request.
+- A partial identify (push-token capture, below) carries no `traits`, so it
+  never touches these keys.
+- The defaults are environment-dependent, so `wire.json` never pins them:
+  conformance harnesses run with device defaults disabled, and the
+  `identify_reserved_traits_passthrough` case pins only that caller-supplied
+  values are sent verbatim under these key names.
 
 ### Push tokens
 

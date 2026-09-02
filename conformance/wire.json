@@ -85,6 +85,19 @@
       }
     },
     {
+      "name": "identify_reserved_traits_passthrough",
+      "op": "identify",
+      "scenario": {
+        "externalUserId": "user_8842",
+        "traits": { "plan": "pro", "timezone": "Europe/Berlin", "locale": "de-DE" }
+      },
+      "endpoint": "/v1/identify",
+      "expectedBody": {
+        "external_user_id": "user_8842",
+        "traits": { "plan": "pro", "timezone": "Europe/Berlin", "locale": "de-DE" }
+      }
+    },
+    {
       "name": "identify_explicit_channel_with_verified",
       "op": "identify",
       "scenario": {
