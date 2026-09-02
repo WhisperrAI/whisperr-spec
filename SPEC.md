@@ -111,8 +111,10 @@ decide *when* and *in which language* to reach the user.
   than sending a guess — never a wrong zone. Flutter cannot obtain an IANA name
   without a plugin (`DateTime.timeZoneName` is an abbreviation), so it sends
   `timezone_offset_minutes` (integer minutes east of UTC at identify time, e.g.
-  `120` for Berlin in summer) instead of `timezone`; the engine does not read
-  that key yet.
+  `120` for Berlin in summer) instead of `timezone`. The engine reads it as a fallback: when no IANA
+  `timezone` is present it builds a fixed-offset zone from the minutes for
+  quiet-hours and send-time evaluation; an IANA name always wins when both
+  are supplied.
 - Both keys travel **inside `traits`** — never top-level. The server rejects
   unknown top-level fields, so a top-level `timezone` 400s the whole request.
 - A partial identify (push-token capture, below) carries no `traits`, so it
