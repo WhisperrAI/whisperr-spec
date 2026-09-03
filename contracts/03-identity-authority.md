@@ -85,6 +85,7 @@ Precedence exists only to *reject* weaker claims, never to resolve ties between 
 | source subject ids | always | one per authorized source |
 | first / display name | optional | only for message personalisation |
 | approved traits | explicit only | allowlisted per app; never "whatever arrived" |
+| reserved traits | `timezone` (IANA), `locale` (BCP 47) | on every app's allowlist by default; populated by the SDKs from the device, caller-overridable; the engine uses them for quiet hours and message language |
 | consent assertions | always | channel, source, timestamp, status ([04](04-consent-assertion.md)) |
 | channel address | **only when Whisperr performs delivery** | encrypted at rest; absent entirely on the relay path ([07](07-delivery-relay.md)) |
 
