@@ -1,0 +1,199 @@
+{
+  "$schema": "../../schemas/catalog-feed.schema.json",
+  "pages": [
+    {
+      "schema_version": "1.0",
+      "snapshot_id": "33ae9581-7480-4bf3-b104-8220ac85715c",
+      "generated_at": "2026-09-21T12:00:00Z",
+      "total_items": 5,
+      "items": [
+        {
+          "source_item_id": "venue:1",
+          "type": "location",
+          "name": "მთავარი რესტორანი",
+          "availability": "available",
+          "localizations": {
+            "ka": {
+              "name": "მთავარი რესტორანი"
+            }
+          },
+          "references": [],
+          "action": {
+            "version": 1,
+            "type": "view_item",
+            "target": {
+              "kind": "location",
+              "id": "1"
+            }
+          },
+          "source_version": "1abb6a88e473737f0872e83ef4a20870483b14e99baf530d9a486d52963d1379"
+        },
+        {
+          "source_item_id": "venue:2",
+          "type": "location",
+          "name": "Restaurant branch",
+          "availability": "available",
+          "localizations": {
+            "ka": {
+              "name": "Restaurant branch"
+            }
+          },
+          "references": [
+            {
+              "relation": "parent",
+              "source_item_id": "venue:1"
+            },
+            {
+              "relation": "product_source",
+              "source_item_id": "venue:1"
+            }
+          ],
+          "action": {
+            "version": 1,
+            "type": "view_item",
+            "target": {
+              "kind": "location",
+              "id": "2"
+            }
+          },
+          "source_version": "a76a3cb78c5d68fa0336b504e315329c698cc3813958d9c78142bb598a1ac5ba"
+        }
+      ],
+      "complete": false,
+      "next_cursor": "MzNhZTk1ODEtNzQ4MC00YmYzLWIxMDQtODIyMGFjODU3MTVjOjE6ZWY1ZTc2YTFmMjYxYTNjMmE0NGJiZGQzYjdhNTVhNTEyMTYzODAwMzQwNDU0YTk4MDUyMTIzZjFhNzQxOTkyYw",
+      "issues": []
+    },
+    {
+      "schema_version": "1.0",
+      "snapshot_id": "33ae9581-7480-4bf3-b104-8220ac85715c",
+      "generated_at": "2026-09-21T12:00:00Z",
+      "total_items": 5,
+      "items": [
+        {
+          "source_item_id": "product:11",
+          "type": "product",
+          "name": "Coffee",
+          "availability": "available",
+          "localizations": {
+            "en": {
+              "name": "Coffee"
+            }
+          },
+          "references": [
+            {
+              "relation": "available_at",
+              "source_item_id": "venue:1"
+            }
+          ],
+          "action": {
+            "version": 1,
+            "type": "view_item",
+            "target": {
+              "kind": "product",
+              "id": "11",
+              "location_id": "1"
+            }
+          },
+          "price": {
+            "amount_minor": 1250,
+            "currency": "GEL",
+            "meaning": "list"
+          },
+          "source_version": "f4643f1e4a51d6a55fd047ef37ad561afff0fd6d66251838e863f64b7a248912"
+        },
+        {
+          "source_item_id": "offer:1:11:1",
+          "type": "offer",
+          "name": "Coffee 1+1",
+          "availability": "limited",
+          "references": [
+            {
+              "relation": "available_at",
+              "source_item_id": "venue:1"
+            },
+            {
+              "relation": "applies_to",
+              "source_item_id": "product:11"
+            }
+          ],
+          "action": {
+            "version": 1,
+            "type": "view_item",
+            "target": {
+              "kind": "product",
+              "id": "11",
+              "location_id": "1"
+            }
+          },
+          "offer_terms": {
+            "kind": "buy_x_get_y",
+            "buy_quantity": 1,
+            "free_quantity": 1,
+            "requires_membership": true,
+            "eligibility": "conditional",
+            "summary": "Selected gift products must not cost more than the paid product. Membership, venue limits, quotas and reservation rules apply; availability is checked in Hotcard."
+          },
+          "source_version": "8b5eaf1d61ec6c8a7df92b051539ab0f53725f7bab2f3f70c1f4d972e27a9228"
+        }
+      ],
+      "complete": false,
+      "next_cursor": "MzNhZTk1ODEtNzQ4MC00YmYzLWIxMDQtODIyMGFjODU3MTVjOjI6Njk4MjAzOWJkODhjYTU5OGVjMTlkNmZhZTlhZjhkZWEyMWY0MTIyZTA5NmNkMzU0YTgwNWZiZTRlNjM3YjNlOQ",
+      "issues": [
+        {
+          "code": "shared_menu_not_actionable",
+          "source_item_id": "venue:2",
+          "message": "Shared menu is recorded, but its ordering rules differ from the branch menu. Shared product actions are excluded."
+        }
+      ]
+    },
+    {
+      "schema_version": "1.0",
+      "snapshot_id": "33ae9581-7480-4bf3-b104-8220ac85715c",
+      "generated_at": "2026-09-21T12:00:00Z",
+      "total_items": 5,
+      "items": [
+        {
+          "source_item_id": "product:12",
+          "type": "product",
+          "name": "Tea",
+          "availability": "available",
+          "localizations": {
+            "en": {
+              "name": "Tea"
+            }
+          },
+          "references": [
+            {
+              "relation": "available_at",
+              "source_item_id": "venue:1"
+            }
+          ],
+          "action": {
+            "version": 1,
+            "type": "view_item",
+            "target": {
+              "kind": "product",
+              "id": "12",
+              "location_id": "1"
+            }
+          },
+          "price": {
+            "amount_minor": 400,
+            "currency": "GEL",
+            "meaning": "list"
+          },
+          "source_version": "d5a7868528f0e455494bb5757f2909cfcd01d5933089073b7a3ae54e77e94b41"
+        }
+      ],
+      "complete": true,
+      "next_cursor": null,
+      "issues": [
+        {
+          "code": "unsupported_offer_terms",
+          "source_item_id": "product:12",
+          "message": "Assigned offer label has no verified structured rule; offer excluded."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "../../schemas/catalog-feed.schema.json",
+  "pages": [
+    {
+      "schema_version": "1.0",
+      "snapshot_id": "flat-shop-snapshot-1",
+      "generated_at": "2026-09-21T00:00:00Z",
+      "total_items": 1,
+      "items": [
+        {
+          "source_item_id": "product:coffee",
+          "type": "product",
+          "name": "Coffee beans",
+          "availability": "available",
+          "price": {
+            "amount_minor": 1500,
+            "currency": "USD",
+            "meaning": "fixed"
+          },
+          "action": {
+            "version": 1,
+            "type": "view_item",
+            "target": {
+              "kind": "product",
+              "id": "coffee"
+            }
+          }
+        }
+      ],
+      "complete": true,
+      "next_cursor": null,
+      "issues": []
+    }
+  ]
+}

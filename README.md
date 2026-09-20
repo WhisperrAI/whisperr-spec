@@ -40,6 +40,17 @@ connector tests and installation evidence are separate requirements.
 **2.0.0 requires no SDK release.** The v1 wire contract below is unchanged and still gates every
 SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md).
 
+## Custom catalog feeds — 1.0
+
+[`contracts/11-catalog-feed.md`](contracts/11-catalog-feed.md) defines the protected,
+immutable snapshot feed for custom backends, localized catalog relationships,
+conditional offers, typed discovery actions and server-only message history.
+[`conformance/catalog/`](conformance/catalog) includes a flat shop, a multi-venue
+example and output exported by Hotcard's actual PHP snapshot producer in an isolated
+test database. Executable runtime tests additionally ingest that producer output;
+schema validation here remains structural. Optional native-action/history SDK
+helpers require an SDK release; the existing ingestion envelope remains unchanged.
+
 ## SDK ingestion contract — v1
 
 - [`SPEC.md`](SPEC.md) — the human-readable contract: endpoints, payload shapes,
