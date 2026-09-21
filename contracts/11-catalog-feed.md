@@ -20,12 +20,12 @@ Localized names/descriptions are bounded customer-facing facts, never arbitrary 
 
 `available` means discoverable according to the producer's published catalog. It does not assert stock, opening hours, purchase success or individual redeemability. Structured `buy_x_get_y` terms describe a conditional offer. Membership and runtime redemption rules still apply. The initial integration supports discovery messages; unconditional eligibility or redemption promises require independently verified per-user eligibility. Uncertain semantics must be excluded with an issue or represented as unknown.
 
-A versioned `view_item` action identifies a native product/location/offer/plan/content destination, with an optional owning `location_id`. An offer may deliberately open its native product. It never redeems, pays or creates an order. Before navigating, the customer backend authenticates the user, retrieves the owned message, and verifies the destination is still available.
+A versioned `view_item` action identifies a native product/location/offer/plan/content destination, with an optional owning `location_id`. An offer may deliberately identify its native product. These IDs let customer events refer to catalog items independently of provider-specific feed IDs. They never authorize redemption, payment or order creation.
 
-## Push and durable history
+## Customer integration boundaries
 
-Whisperr sends pushes directly through its existing FCM delivery adapter. Data keys are `whisperr_message_id`, `whisperr_user_id` (the canonical external backend user ID as a string), and `whisperr_action` (JSON-encoded action). A device payload is a navigation hint, not authorization. A logged-in identity mismatch must refuse the action; a cold start must retain the hint until authentication is known and then resolve it through the backend.
+Mobile instrumentation records actual user intent with stable item and location IDs. Canonical Hotcard identity is its numeric backend user ID formatted as a string. Existing login/session saves identify that account for analytics; existing logout paths reset it. Analytics must not change authentication, navigation or ordinary app behavior.
 
-Server-only, bound producer credentials can read `GET /v1/users/{external_user_id}/messages?limit=50&cursor=...` returning `{messages:[{id,title,body,created_at,action}],next_cursor}` and `GET /v1/users/{external_user_id}/messages/{message_id}` returning `{message:{...}}`. Public SDK keys cannot access history. The customer backend must derive the external ID from its authenticated user, never from an untrusted recipient parameter. This preserves history when a push is missed.
+Committed business outcomes belong in the backend, with stable event identity, original occurrence time and durable retries. Viewing an order history screen is not a new order or redemption. Catalog snapshots and outcome events use separate credentials and delivery contracts.
 
-Hotcard's authenticated proxies are `GET /api/v100/user/whisperr/messages` and `GET /api/v100/user/whisperr/messages/{messageId}/action`; the latter returns `{message_id,action,available}`. Canonical Hotcard identity is its numeric backend user ID formatted as a string. Existing legacy notifications remain distinct.
+An inbox, native message navigation and push registration are separate integration features. This feed contract does not install them or define message-history endpoints. Any future navigation integration must verify recipient ownership and current target availability before acting on message data.
