@@ -13,6 +13,9 @@ this contract, so the fixtures pin the expected behavior:
 - [`conformance/push.json`](conformance/push.json) pins push-token capture flows
   (`setPushToken`) for the SDKs that expose them (mobile: React Native, Flutter,
   Swift).
+- [`conformance/anonymous.json`](conformance/anonymous.json) pins the anonymous
+  visitor lane (`anonymous_id` before `identify()`, promotion on `identify()`,
+  rotation on `reset()`) for the SDKs that implement it (browser first).
 
 ## Endpoints
 
@@ -46,9 +49,20 @@ PostHog project key, not a secret.
 }
 ```
 
-- `external_user_id` (string, required) — the customer's own stable user id. On
-  backends it is always passed explicitly; the browser SDK fills it in on
-  `identify()` and backfills buffered anonymous events.
+- `external_user_id` (string) — the customer's own stable user id. Backend
+  SDKs always pass it explicitly; client SDKs fill it in from the current user
+  once `identify()` has run.
+- `anonymous_id` (string, 1–128 chars) — an opaque handle for a visitor who has
+  not been identified yet: the same body with `"anonymous_id": "3f2c…"` in place
+  of `external_user_id`. The SDK generates it (a UUID v4), keeps it per device /
+  browser profile, and sends pre-identify events under it right away instead of
+  holding them back; the server attaches them to an anonymous user that
+  `identify` later promotes.
+- **At least one of `external_user_id` / `anonymous_id` is required.** When
+  both are present the event belongs to the identified user and `anonymous_id`
+  is ignored for attachment. Sending `external_user_id` alone works exactly as
+  before, so backend SDKs and SDKs that still buffer pre-identify events
+  locally are unaffected.
 - `event_type` (string, required) — lowercase `snake_case`
   (`^[a-z0-9]+(?:_[a-z0-9]+)*$`). The server rejects anything else.
   SDKs should validate this before enqueueing and surface/drop invalid events so
@@ -74,6 +88,12 @@ PostHog project key, not a secret.
 ```
 
 - `external_user_id` (string, required).
+- `anonymous_id` (string, 1–128 chars, optional) — the handle this device sent
+  pre-identify events under. When present the server promotes that anonymous
+  user — every event and all state attached to it — into `external_user_id`;
+  an unknown handle is not an error. This is the explicit verified transition
+  [`contracts/03`](contracts/03-identity-authority.md) requires and the only
+  way an anonymous user ever becomes an identified one.
 - `traits` (object, optional) — omit when empty. Free-form apart from the
   [reserved keys](#reserved-trait-keys) below.
 - `preferred_channel` (string, optional) — one of `email` | `sms` | `push`.
@@ -123,6 +143,26 @@ decide *when* and *in which language* to reach the user.
   conformance harnesses run with device defaults disabled, and the
   `identify_reserved_traits_passthrough` case pins only that caller-supplied
   values are sent verbatim under these key names.
+
+### Anonymous visitors
+
+Client SDKs (browser, mobile) can record behavior before the app knows who the
+user is. Implementing this lane is optional — an SDK that buffers pre-identify
+events locally and sends them only after `identify()` has filled in
+`external_user_id` stays conformant — but an SDK that implements it follows one
+lifecycle:
+
+- **One handle per device / browser profile.** The SDK generates `anonymous_id`
+  on first use, persists it next to its queue, and puts it on every event sent
+  before `identify()`.
+- **`identify()` promotes.** The identify body carries the current handle, so
+  the anonymous user is merged into the identified one by the customer's own
+  claim — never by inference, and never across two different handles.
+- **`reset()` (logout) rotates the handle.** The next person on the same device
+  is a new anonymous visitor; nothing they do can attach to the previous user.
+
+These flows are executable in
+[`conformance/anonymous.json`](conformance/anonymous.json).
 
 ### Push tokens
 

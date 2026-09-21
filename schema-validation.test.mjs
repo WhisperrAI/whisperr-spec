@@ -11,8 +11,8 @@ const root = dirname(fileURLToPath(import.meta.url));
 test('all committed schemas compile and fixtures structurally conform', () => {
   const result = validateSchemas(root);
   assert.deepEqual(result.errors, []);
-  assert.equal(result.schemaCount, 13);
-  assert.equal(result.fixtureCount, 15);
+  assert.equal(result.schemaCount, 14);
+  assert.equal(result.fixtureCount, 16);
 });
 
 for (const [name, file, mutate] of [

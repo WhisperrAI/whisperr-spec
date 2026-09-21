@@ -43,7 +43,9 @@ shadow user that later collides with the real one.
 ### `anonymous_capable`
 Behavior may be attached to an anonymous handle before identity is known. Promotion to a real
 identity happens **only** through an explicit verified transition carrying the promoting source —
-never by inference, and never retroactively across two different anonymous handles.
+never by inference, and never retroactively across two different anonymous handles. For the SDK
+source that transition is `identify` carrying the handle as `anonymous_id`
+([10](10-sdk-compatibility.md)).
 
 ## The absolute prohibitions
 
