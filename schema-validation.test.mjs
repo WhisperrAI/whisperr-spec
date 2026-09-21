@@ -11,11 +11,17 @@ const root = dirname(fileURLToPath(import.meta.url));
 test('all committed schemas compile and fixtures structurally conform', () => {
   const result = validateSchemas(root);
   assert.deepEqual(result.errors, []);
-  assert.equal(result.schemaCount, 13);
-  assert.equal(result.fixtureCount, 15);
+  assert.equal(result.schemaCount, 14);
+  assert.equal(result.fixtureCount, 18);
 });
 
 for (const [name, file, mutate] of [
+  ['catalog price presence', 'conformance/catalog/flat-shop.json', d => { delete d.pages[0].items[0].price.amount_minor; }],
+  ['catalog membership presence', 'conformance/catalog/hotcard.json', d => { delete d.pages[1].items[1].offer_terms.requires_membership; }],
+  ['catalog completed cursor', 'conformance/catalog/flat-shop.json', d => { d.pages[0].next_cursor = 'still-more'; }],
+  ['catalog tenant injection', 'conformance/catalog/flat-shop.json', d => { d.pages[0].items[0].connection_id = 'foreign'; }],
+  ['catalog action command', 'conformance/catalog/flat-shop.json', d => { d.pages[0].items[0].action.type = 'redeem'; }],
+
   ['identity enum', 'conformance/connectors/supabase.json', d => { d.manifest.capabilities.identity = 'can_create_any_user'; }],
   ['outcome enum', 'conformance/connectors/supabase.json', d => { d.cases[0].expect.outcome = 'nonsense_not_in_enum'; }],
   ['primitive type', 'conformance/connectors/supabase.json', d => { d.manifest.capabilities.live_stream = 'true'; }],

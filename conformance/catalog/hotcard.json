@@ -1,0 +1,108 @@
+{
+  "$schema": "../../schemas/catalog-feed.schema.json",
+  "pages": [
+    {
+      "schema_version": "1.0",
+      "snapshot_id": "hotcard-snapshot-1",
+      "generated_at": "2026-09-21T00:00:00Z",
+      "total_items": 3,
+      "items": [
+        {
+          "source_item_id": "venue:42",
+          "type": "location",
+          "name": "Cafe Example",
+          "availability": "available",
+          "localizations": {
+            "en": {
+              "name": "Cafe Example"
+            },
+            "ka": {
+              "name": "მაგალითი"
+            }
+          },
+          "action": {
+            "version": 1,
+            "type": "view_item",
+            "target": {
+              "kind": "location",
+              "id": "42"
+            }
+          }
+        }
+      ],
+      "complete": false,
+      "next_cursor": "opaque-page-2",
+      "issues": []
+    },
+    {
+      "schema_version": "1.0",
+      "snapshot_id": "hotcard-snapshot-1",
+      "generated_at": "2026-09-21T00:00:00Z",
+      "total_items": 3,
+      "items": [
+        {
+          "source_item_id": "product:8",
+          "type": "product",
+          "name": "Cappuccino",
+          "availability": "available",
+          "price": {
+            "amount_minor": 950,
+            "currency": "GEL",
+            "meaning": "list"
+          },
+          "references": [
+            {
+              "relation": "available_at",
+              "source_item_id": "venue:42"
+            }
+          ],
+          "action": {
+            "version": 1,
+            "type": "view_item",
+            "target": {
+              "kind": "product",
+              "id": "8",
+              "location_id": "42"
+            }
+          }
+        },
+        {
+          "source_item_id": "offer:42:8:1",
+          "type": "offer",
+          "name": "Cappuccino 1+1",
+          "availability": "limited",
+          "references": [
+            {
+              "relation": "available_at",
+              "source_item_id": "venue:42"
+            },
+            {
+              "relation": "applies_to",
+              "source_item_id": "product:8"
+            }
+          ],
+          "action": {
+            "version": 1,
+            "type": "view_item",
+            "target": {
+              "kind": "product",
+              "id": "8",
+              "location_id": "42"
+            }
+          },
+          "offer_terms": {
+            "kind": "buy_x_get_y",
+            "buy_quantity": 1,
+            "free_quantity": 1,
+            "requires_membership": true,
+            "eligibility": "conditional",
+            "summary": "Subject to membership and venue redemption rules."
+          }
+        }
+      ],
+      "complete": true,
+      "next_cursor": null,
+      "issues": []
+    }
+  ]
+}
