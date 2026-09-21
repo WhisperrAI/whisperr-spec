@@ -3,7 +3,7 @@
 The single source of truth for the Whisperr integration contracts and for SDK ingestion
 behavior.
 
-## Integration contracts — `2.0.0-rc4`
+## Integration contracts — `2.0.0-rc5`
 
 [`contracts/`](contracts) holds the contracts the Whisperr Integration Program is built
 against: the canonical event envelope, source connection manifests, identity authority modes,
@@ -54,6 +54,9 @@ SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md
   capture flows (`setPushToken` / `identify(pushToken:)`: partial re-identify,
   rotation opt-out, dedup across restart-then-reidentify, buffer-until-identify,
   empty-token no-op, and `reset` re-registration) for the SDKs that expose them.
+- [`conformance/anonymous.json`](conformance/anonymous.json) — canonical
+  anonymous-visitor flows (`anonymous_id` on pre-identify events, promotion on
+  `identify`, rotation on `reset`) for the SDKs that implement the lane.
 - [`schemas/`](schemas) — JSON Schemas for the conformance fixtures.
 
 SDK tests default to the published fixtures:
@@ -62,7 +65,8 @@ SDK tests default to the published fixtures:
 - `https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/conformance/behavior.json`
 
 For local development, set `WHISPERR_SPEC_PATH=/path/to/conformance/wire.json`.
-Behavior tests will load `behavior.json` from the same directory. Set
+Behavior, push, and anonymous tests load `behavior.json`, `push.json`, and
+`anonymous.json` from the same directory. Set
 `WHISPERR_BEHAVIOR_SPEC_PATH` only when you need to override that explicitly.
 
 When the contract changes: update `SPEC.md` and the fixture here first, then

@@ -447,6 +447,7 @@
             {
               "endpoint": "/v1/events/track",
               "body": {
+                "anonymous_id": "3f2c0c8e-6a4b-4f0c-9c3d-2b1d7e5a9f10",
                 "event_type": "page_viewed",
                 "context": {
                   "$message_id": "a5"
@@ -457,7 +458,8 @@
             {
               "endpoint": "/v1/identify",
               "body": {
-                "external_user_id": "user_8842"
+                "external_user_id": "user_8842",
+                "anonymous_id": "3f2c0c8e-6a4b-4f0c-9c3d-2b1d7e5a9f10"
               }
             }
           ]
@@ -470,7 +472,7 @@
           "promoted_by": "identify",
           "creates_user": true
         },
-        "notes": "The SDK's existing identify() backfill IS the explicit verified transition. No retroactive linking across two different anonymous handles."
+        "notes": "The SDK's identify() carrying the handle as anonymous_id IS the explicit verified transition. No retroactive linking across two different anonymous handles."
       },
       "demonstrates_capabilities": [
         "identity"

@@ -21,6 +21,7 @@ canonical envelope on ingest.
 | v1 field | envelope field | note |
 |---|---|---|
 | `external_user_id` | `subject.customer_stable_id` | the customer's own id |
+| `anonymous_id` | `subject.source_subject_id`, `authority: anonymous_capable` | the SDK's device handle; `customer_stable_id` is set when `identify` promotes it |
 | `event_type` | `event.code` | identical `snake_case` rule |
 | `occurred_at` | `time.occurred_at` | identical RFC3339-ms-Z rule and ±window |
 | — | `time.received_at` | server-assigned |
@@ -46,11 +47,13 @@ Two mappings deserve emphasis:
 | situation | mode |
 |---|---|
 | explicit `external_user_id` (all backend SDKs; browser after `identify()`) | `authoritative` |
-| browser/mobile before `identify()` — buffered anonymous events | `anonymous_capable` |
+| browser/mobile before `identify()` — events sent under `anonymous_id` | `anonymous_capable` |
 
-The customer's own SDK asserting their own user id is authoritative by definition. Anonymous
-buffering promotes only through the SDK's existing `identify()` backfill, which is the explicit
-verified transition [03](03-identity-authority.md) requires.
+The customer's own SDK asserting their own user id is authoritative by definition. An anonymous
+handle promotes only when the SDK's `identify()` carries it as `anonymous_id` — that call is the
+explicit verified transition [03](03-identity-authority.md) requires; the server never infers the
+link. An SDK that still buffers pre-identify events locally and sends them only after `identify()`
+has filled in `external_user_id` never creates an anonymous handle and stays conformant.
 
 ## What 2.0.0 adds, optionally
 
@@ -60,9 +63,14 @@ Nothing below is required. An SDK that implements none of it stays fully conform
   the X20 executor playbook. Absent means `live`.
 - `context.$occurrence_key` — lets an SDK correlate an event it emits with the same occurrence
   arriving from a provider webhook. Absent means no correlation, which is the safe default.
+- `anonymous_id` on `track` and `identify` — lets a client SDK send pre-identify events right away
+  under a device handle and have `identify()` promote them ([`SPEC.md`](../SPEC.md) → Anonymous
+  visitors; executable in `conformance/anonymous.json`). An SDK that keeps buffering locally is
+  unaffected.
 
-Both are `context` keys, and `context` is already free-form in v1 — so adding them is a *minor*
-version bump, not a breaking one.
+The first two are `context` keys, and `context` is already free-form in v1; `anonymous_id` is an
+optional top-level field the server accepts alongside `external_user_id` — so adding any of them
+is a *minor* version bump, not a breaking one.
 
 ## Breaking-change policy
 

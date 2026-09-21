@@ -41,7 +41,7 @@ for f, d in docs.items():
     if not os.path.exists(target): err(f, f"$schema points at a missing file: {ref}")
 
 # ---------------------------------------------------------------- 3. SDK fixtures untouched by 2.0.0
-for f in ("conformance/wire.json", "conformance/behavior.json", "conformance/push.json"):
+for f in ("conformance/wire.json", "conformance/behavior.json", "conformance/push.json", "conformance/anonymous.json"):
     if f not in docs: err(f, "SDK fixture missing — 2.0.0 must not remove it")
 
 # ---------------------------------------------------------------- 4. connector fixtures
