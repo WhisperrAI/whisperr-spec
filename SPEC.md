@@ -273,6 +273,20 @@ SDKs may differ internally, but they must converge on these outcomes:
 
 Retries must preserve the same `$message_id` for the same event.
 
+When a `429` or `503` response carries `Retry-After` (delay-seconds or
+HTTP-date, RFC 9110 §10.2.3), SDKs MUST wait at least that long before the
+next retry of that request, capped at 60 seconds, instead of their computed
+backoff. An absent or unparseable value falls back to the backoff. Honoring
+`Retry-After` does not reset or extend the retry limit.
+
+Browser SDKs SHOULD flush queued ops when the page is hidden or unloaded
+(`visibilitychange` → `hidden`, `pagehide`) using `fetch` with `keepalive`,
+staying within the 64 KiB in-flight keepalive quota. Ops MUST remain queued
+until a response confirms them (at-least-once); the backend resolves
+duplicates by `$message_id`. Ops left queued are delivered on the next load
+with their original `occurred_at`, so data arrives late — which is why the
+exit flush matters.
+
 These rules are executable in
 [`conformance/behavior.json`](conformance/behavior.json). Add or change behavior
 there before changing SDK implementations.
