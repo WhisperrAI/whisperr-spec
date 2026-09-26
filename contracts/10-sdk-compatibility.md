@@ -24,7 +24,8 @@ canonical envelope on ingest.
 | `anonymous_id` | `subject.source_subject_id`, `authority: anonymous_capable` | the SDK's device handle; `customer_stable_id` is set when `identify` promotes it |
 | `event_type` | `event.code` | identical `snake_case` rule |
 | `occurred_at` | `time.occurred_at` | identical RFC3339-ms-Z rule and ±window |
-| — | `time.received_at` | server-assigned |
+| — | `time.accepted_at` | server-assigned when the request is durably accepted (the `2xx`) |
+| — | `time.received_at` | server-assigned when the event is processed |
 | `properties` | `event.properties` | filtered by the registered `payload_schema` |
 | `context.$message_id` | `correlation.idempotency_key` | already stable across retries per `SPEC.md` |
 | `X-API-Key` / `Bearer` | `origin.connection_id` | resolved from the ingestion key |

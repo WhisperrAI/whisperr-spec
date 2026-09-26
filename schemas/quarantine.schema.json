@@ -15,7 +15,10 @@
       "enum": ["identity_conflict", "unregistered_event_code", "schema_violation", "mapping_ambiguous", "catalog_reference_invalid", "consent_missing_for_required_channel"]
     },
     "retry_code": { "enum": ["transient_provider_error", "rate_limited", "downstream_unavailable", "lease_lost"] },
-    "dead_letter_code": { "enum": ["retry_exhausted", "permanently_malformed"] },
+    "dead_letter_code": {
+      "enum": ["retry_exhausted", "permanently_malformed", "derived_event_code", "contact_change_requires_server_key"],
+      "description": "derived_event_code and contact_change_requires_server_key are SDK-ingestion rejections decided after the 202 acknowledge (contracts/09)."
+    },
     "suppression_code": {
       "enum": ["test_mode", "consent_blocked", "catalog_uncertain", "expired", "intervention_paused"],
       "description": "Intentional and NOT a failure. Counted and visible, never reported as an error."

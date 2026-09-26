@@ -61,8 +61,27 @@ repair path — a quarantine with no way out is a bug, not a state.
 | `lease_lost` | retrying (recovered by lease expiry) |
 | `retry_exhausted` | dead_lettered |
 | `permanently_malformed` | dead_lettered |
+| `derived_event_code` | dead_lettered |
+| `contact_change_requires_server_key` | dead_lettered |
 
 Dead-lettered items are manually replayable after repair. They are not deleted.
+
+### Post-accept rejections on the SDK ingestion API
+
+For `/v1/events/track`, `/v1/events/batch`, and `/v1/identify` the acknowledge point is the `202`
+(`SPEC.md` → Acceptance vs processing). Request-shape failures are `rejected` before it and returned
+synchronously (`400`, `413`; auth failures `401`/`403`; `429`). A rejection that needs server state
+can only be decided after the `202`, so it is dead-lettered instead of returned to the caller:
+
+| code | when | smallest repair action |
+|---|---|---|
+| `derived_event_code` | the `event_type` is an event Whisperr computes itself; ingestion may not send it | stop sending it from the emitter |
+| `contact_change_requires_server_key` | an identify or event changes an existing email or phone using a publishable key | send the change with a server key |
+
+Only the offending event or identify is dead-lettered; the rest of its batch completes and the
+SDK's queue is never affected. These entries are visible to the app owner in the dashboard, like
+every other dead letter. Replaying one unchanged fails the same way — the repair happens at the
+emitter, which sends a corrected request.
 
 ## `suppressed` — intentional, and not a failure
 

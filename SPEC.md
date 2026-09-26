@@ -232,7 +232,12 @@ lowercase hex.
     pair for that (user, token) so the next `setPushToken` re-registers it —
     otherwise a single rejected registration wedges the token opted-out of
     every future attempt. (Retryable failures retain the op and the pair; the
-    op is redelivered.)
+    op is redelivered.) "Delivered" means a `2xx` on the identify: the token
+    was durably accepted for processing (see
+    [Acceptance vs processing](#acceptance-vs-processing)). A failure the
+    server finds only while processing it is dead-lettered server-side and
+    surfaced to the app owner; the SDK never learns of it, keeps the pair,
+    and does not resend.
   - `reset()` (logout) clears the buffered token and the last-sent pair —
     including the persisted copy; after the next login the app calls
     `setPushToken` again (which re-registers, since the pair was forgotten).
@@ -266,7 +271,7 @@ SDKs may differ internally, but they must converge on these outcomes:
 
 | Response | Classification | SDK outcome |
 |---|---|---|
-| `2xx` | ok | Remove the delivered op/batch from the queue. |
+| `2xx` | ok | Remove the delivered op/batch from the queue. A `2xx` means *durably accepted for processing*, not processed — see [Acceptance vs processing](#acceptance-vs-processing). |
 | `401`/`403` | auth | Stop flushing, emit/surface `auth`, retain the op/batch for a later flush. |
 | `429`, `5xx`, network/timeout | retry | Retry with bounded backoff; after retries are exhausted, emit/surface `retry_exhausted` and retain the op/batch. |
 | other `4xx` | drop | Emit/surface `dropped` and remove the offending op/batch. |
@@ -286,6 +291,54 @@ until a response confirms them (at-least-once); the backend resolves
 duplicates by `$message_id`. Ops left queued are delivered on the next load
 with their original `occurred_at`, so data arrives late — which is why the
 exit flush matters.
+
+### Acceptance vs processing
+
+Ingestion is **accept fast, process asynchronously**. On `track`, `batch`,
+and `identify` the server validates only the shape of the request (valid
+JSON, known fields, sizes, `snake_case` `event_type`, the `occurred_at`
+window, …), durably records it, and answers `202`. Everything that needs
+server state — resolving the user, applying traits and channels, evaluating
+the event — happens after the response, normally within seconds.
+
+| Endpoint | Success response |
+|---|---|
+| `POST /v1/events/batch` | `202 {"accepted": N, "rejected": M}` |
+| `POST /v1/events/track` | `202 {"event": {"mapping_status": "pending"}, "processing": "queued"}` |
+| `POST /v1/identify` | `202 {"processing": "queued"}` |
+
+- **`2xx` means durably accepted, not processed or delivered.** Once an SDK
+  sees a `2xx` the server owns the op; the SDK dequeues it and never resends
+  it. SDKs MUST classify on the status class, never on an exact status code
+  or on response fields beyond those listed here.
+- **Batch `rejected`** counts only events that failed request-shape
+  validation (unknown field, bad `event_type`, `occurred_at` out of window,
+  …); the rest of the batch is accepted. Request-level problems — invalid
+  JSON, an unknown top-level field, an empty or oversized `events` array —
+  still fail the whole request with `400`.
+- **Rejections that need server state happen after the `202`** and are not
+  returned to the caller. They are recorded as dead letters the app owner
+  sees in the dashboard, and only the offending event or identify is
+  affected — never the rest of its batch, and never the SDK's queue:
+  - `derived_event_code` — the `event_type` is an event Whisperr computes
+    itself and cannot be sent through ingestion (previously `422` on
+    `track`, counted in `rejected` on `batch`).
+  - `contact_change_requires_server_key` — the request changes an existing
+    email or phone with a publishable key (previously a `403`, which also
+    failed the whole batch and, because `403` classifies as `auth`, stalled
+    the SDK queue).
+- **Identify and track are applied in the order they were accepted**, per
+  app. Events a visitor sent under `anonymous_id` before `identify()` are
+  therefore always promoted by that `identify`, and a track sent after an
+  `identify` sees its traits and channels. SDKs keep this guarantee by
+  sending `identify` through the same ordered queue as `track` — never
+  around it. (This is the order requests are *applied* in; an event's
+  place on the user's timeline is still its `occurred_at`.)
+- Duplicates are still resolved server-side by `$message_id`.
+- Unchanged by async accept: `400` (invalid request), `401`/`403` (missing,
+  invalid, or revoked key), `413` (payload too large), and `429` (rate
+  limited, with `Retry-After`) are returned synchronously and classified as
+  in the table above.
 
 These rules are executable in
 [`conformance/behavior.json`](conformance/behavior.json). Add or change behavior

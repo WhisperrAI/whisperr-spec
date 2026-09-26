@@ -45,6 +45,7 @@ an **app**, is defined by a **registration revision**, and is *observed by* one 
 
   "time": {
     "occurred_at": "2026-08-31T09:14:02.117Z",
+    "accepted_at": "2026-08-31T09:14:02.981Z",
     "received_at": "2026-08-31T09:14:03.402Z",
     "source_sequence": "1724921642-000431"
   },
@@ -103,16 +104,23 @@ F10 backfill.
 
 ### `time` — occurrence is authoritative, receipt never is
 - `occurred_at` — when it happened *in the source system*. **This is the ordering key.**
-- `received_at` — when Whisperr durably accepted it. Diagnostic only; never used for ordering,
-  windowing, or state transitions.
+- `accepted_at` — when the API durably accepted the request carrying it (the `2xx` point;
+  ingestion is accept-then-process, see `SPEC.md` → Acceptance vs processing). Optional: absent for
+  events that were not accepted through an asynchronous buffer. Diagnostic only.
+- `received_at` — when the event was processed and became visible in Whisperr (the processing
+  commit). Under asynchronous acceptance it is normally a few seconds after `accepted_at`, and
+  later while processing is backlogged. Diagnostic only; never used for ordering, windowing, or
+  state transitions.
 - `source_sequence` — optional provider ordering token, used only to break `occurred_at` ties.
 
 Auth0 log streams are at-least-once *and* out-of-order, so ordering on receipt would corrupt
 state. Ordering on occurrence is therefore mandatory for every source, not an Auth0 special case.
 
 `occurred_at` is RFC3339 UTC, millisecond precision, `Z` suffix — the same format `SPEC.md`
-already pins for SDKs. Acceptance window: **+5 min / −30 days** of receipt, matching the existing
-SDK rule. Outside it: `timestamp_out_of_window`, rejected before acknowledge.
+already pins for SDKs. Acceptance window: **+5 min / −30 days** of acceptance (`accepted_at`
+when present, else `received_at`), matching the existing SDK rule — a backlog between accepting and
+processing never pushes an accepted event out of the window. Outside it: `timestamp_out_of_window`,
+rejected before acknowledge.
 
 ### `correlation` — two distinct keys, do not conflate them
 
@@ -139,7 +147,7 @@ that same event correlate; distinct updates to the same object remain distinct.
 ## Invariants
 
 1. An envelope with `mode: test` never reaches production evaluation or delivery.
-2. `occurred_at` orders; `received_at` never does.
+2. `occurred_at` orders; `received_at` and `accepted_at` never do.
 3. An unregistered `event.code` quarantines; it never auto-registers.
 4. Two envelopes with the same `idempotency_key` on the same connection collapse to one ingest.
 5. Two envelopes with the same `occurrence_key` collapse to one canonical event with two bindings.
