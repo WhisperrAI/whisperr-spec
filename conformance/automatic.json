@@ -16,11 +16,14 @@
     "platform": {
       "type": "string",
       "required": true,
-      "description": "The OS family, never the framework name: an iPad is ios, a React Native app on Android is android.",
+      "description": "The OS family, never the framework name: an iPad is ios, a React Native app on Android is android, a Flutter desktop app is macos, windows or linux. Readers treat any other value as other; the server never rejects an event for it.",
       "enum": [
         "ios",
         "android",
-        "web"
+        "web",
+        "macos",
+        "windows",
+        "linux"
       ],
       "placeholder": "$platform"
     },
@@ -31,7 +34,10 @@
       "enum": [
         "ios",
         "android",
-        "web"
+        "web",
+        "macos",
+        "windows",
+        "linux"
       ],
       "placeholder": "$platform"
     },

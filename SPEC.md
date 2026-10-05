@@ -297,7 +297,7 @@ Every automatic event also carries these **flat** keys in `properties`:
 |---|---|
 | `app_version` | User-facing version as a string — `CFBundleShortVersionString`, `versionName` |
 | `app_build` | Build number as a string — `CFBundleVersion`, `versionCode` |
-| `platform` | OS family: `ios` \| `android` \| `web` — always present. Never the framework name: an iPad is `ios`; React Native and Flutter on Android are `android`. |
+| `platform` | OS family: `ios` \| `android` \| `web` \| `macos` \| `windows` \| `linux` — always present. Never the framework name: an iPad is `ios`; React Native and Flutter on Android are `android`; Flutter desktop is `macos`, `windows`, or `linux`. |
 | `os_name` | The same lowercase family value as `platform` — always present |
 | `os_version` | OS version as a string — `18.2`, `15` |
 | `sdk_name` | `whisperr-swift` \| `whisperr-flutter` \| `whisperr-react-native` \| `whisperr-web` — always present |
@@ -366,7 +366,8 @@ Every automatic event also carries these **flat** keys in `properties`:
   register a reserved name. The server stores the event as a known (mapped)
   event even when the app's event registry does not list it. It does not
   validate the properties: unknown extra keys are kept, both `timezone` and
-  `timezone_offset_minutes` are accepted, and duplicate
+  `timezone_offset_minutes` are accepted, an unknown `platform` value is
+  stored as sent (breakdowns group it as `other`), and duplicate
   `app_installed` / `app_updated` events from a reinstall are tolerated.
 - **A customer event with the same name still works.** An app may register a
   reserved name (for example a PR agent that adds `app_opened`). The
