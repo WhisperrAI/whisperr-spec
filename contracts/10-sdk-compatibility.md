@@ -70,7 +70,7 @@ Nothing below is required. An SDK that implements none of it stays fully conform
   unaffected.
 
 - The reserved automatic events (`app_installed`, `app_updated`, `app_opened`,
-  `app_backgrounded`, `screen_viewed`, `push_opened`) — ordinary track events an SDK sends on
+  `app_backgrounded`, `screen_viewed`, `push_opened`, `push_permission_changed`) — ordinary track events an SDK sends on
   its own ([`SPEC.md`](../SPEC.md) → Automatic events; executable in
   `conformance/automatic.json`; server meaning in [11](11-automatic-events.md)). An SDK that
   sends none of them stays conformant, and older SDK releases are unaffected.

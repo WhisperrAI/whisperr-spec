@@ -61,7 +61,8 @@ SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md
   `identify`, rotation on `reset`) for the SDKs that implement the lane.
 - [`conformance/automatic.json`](conformance/automatic.json) — the reserved
   automatic events (`app_installed`, `app_updated`, `app_opened`,
-  `app_backgrounded`, `screen_viewed`, `push_opened`) as a machine-readable
+  `app_backgrounded`, `screen_viewed`, `push_opened`,
+  `push_permission_changed`) as a machine-readable
   catalogue, plus the lifecycle flows that send them, for the SDKs that
   implement them.
 - [`schemas/`](schemas) — JSON Schemas for the conformance fixtures.

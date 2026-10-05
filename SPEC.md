@@ -329,6 +329,7 @@ format does not change.
 | `app_backgrounded` | Every move to the background | `foreground_ms` (int) | no |
 | `screen_viewed` | The app calls the screen API; automatic only where the framework makes it cheap | `screen_name` | **yes** |
 | `push_opened` | The user opens a notification whose data carries `whisperr_message_id` | `whisperr_message_id`, `deep_link` (optional) | **yes** |
+| `push_permission_changed` | The SDK first learns the notification permission, or learns that it changed | `status`, `previous_status` (optional) | no |
 
 The full catalogue, with types and triggers, is machine-readable in
 [`conformance/automatic.json`](conformance/automatic.json) (`reserved`,
@@ -393,6 +394,21 @@ Every automatic event also carries these **flat** keys in `properties`:
 - **`push_opened` only for Whisperr messages.** The SDK reads
   `whisperr_message_id` from the notification data and copies `deep_link` when
   the data has one. A notification without `whisperr_message_id` sends nothing.
+  The data key for the link is `whisperr_deep_link`; SDKs also accept
+  `deep_link`, so payloads built before this key keep working. The event
+  property is always `deep_link`. A rich-push image URL rides in
+  `whisperr_image_url`.
+- **`push_permission_changed` reports the notification permission.**
+  `status` is `authorized`, `provisional`, `denied`, or `not_determined`
+  (iOS ephemeral App Clip permission reports as `authorized`). The SDK stores
+  the last status it sent, next to its queue, and sends the event only when it
+  has no stored status or the new status differs; `previous_status` carries the
+  stored value. Where the platform can read the permission without a prompt
+  (iOS `getNotificationSettings`), the SDK reads it on each move to the
+  foreground; the off switch stops this read. The app can always report it
+  through the SDK's permission API. `reset()` forgets the stored status, so the
+  next user on the device gets a fresh report. While the user is opted out the
+  SDK sends nothing and keeps the stored status unchanged.
 - **Identity is unchanged.** Automatic events follow the same rules as any
   `track()`: `external_user_id` after `identify()`; before it, the anonymous
   lane or the SDK's local pre-identify buffer. An automatic event never throws
@@ -418,9 +434,9 @@ Every automatic event also carries these **flat** keys in `properties`:
   reserved name (for example a PR agent that adds `app_opened`). The
   registration supplies the label and schema; the code keeps its meaning.
 - **Activity.** Only `app_opened`, `screen_viewed`, and `push_opened` (and the
-  app's own events) make a user active. `app_installed`, `app_updated`, and
-  `app_backgrounded` describe the app, not a user choice, and never count as
-  activity.
+  app's own events) make a user active. `app_installed`, `app_updated`,
+  `app_backgrounded`, and `push_permission_changed` describe the app or the
+  device, not a use of the app, and never count as activity.
 - **Derived events can never use these names.** They are raw events reported
   by the device.
 
