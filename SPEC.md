@@ -108,6 +108,12 @@ PostHog project key, not a secret.
   - `address` (string, required).
   - `opted_in` (bool) — defaults to `true`.
   - `verified` (bool, optional) — omit unless set.
+  - `kind` (string, optional, `push` only) — `fcm` | `apns` | `expo` |
+    `onesignal_sub`. The token type. See [Token kind](#token-kind).
+  - `platform` (string, optional, `push` only) — `ios` | `android` | `web` |
+    `macos` | `windows` | `linux`.
+  - `push_env` (string, optional, `push` only) — `production` | `sandbox`. The
+    APNs environment of the token.
 
 Convenience shortcuts in the SDK APIs (`email` / `phone` / `pushToken`) expand to
 opted-in `email` / `sms` / `push` channels respectively.
@@ -170,9 +176,10 @@ These flows are executable in
 
 ### Push tokens
 
-A push token (FCM registration token, APNs device token) is just a `push`
-channel: the token string goes in `address`. APNs device tokens are sent as
-lowercase hex.
+A push token (FCM registration token, APNs device token, Expo push token) is
+just a `push` channel: the token string goes in `address`. APNs device tokens
+are sent as lowercase hex. The optional `kind`, `platform` and `push_env`
+fields describe the token (see [Token kind](#token-kind)).
 
 - **Channels upsert by `(channel, address)`.** On identify, the server upserts
   each incoming channel keyed by its type *and* address. Two different push
@@ -251,6 +258,44 @@ push token (via the `pushToken` shortcut or an explicit push channel) that
 differs from the last token this SDK sent for that user, it opts the previous
 token out in the same body — exactly like `setPushToken`. Passing `pushToken`
 to `identify` must not strand the earlier token opted-in.
+
+### Token kind
+
+A push entry may carry three optional fields: `kind`, `platform` and
+`push_env`. They tell the server which provider can send to the token. All
+three are optional, so an SDK built before them keeps working.
+
+- **SDKs send only what they know.** Swift sends `kind: "apns"`,
+  `platform: "ios"`, and `push_env` from the build (a debug build gets
+  `sandbox` tokens). An Expo app sends `kind: "expo"`. An SDK that does not know
+  a value omits the key. It never guesses.
+- **Server inference.** When `kind` is missing, the server infers it from the
+  token:
+  1. `ExponentPushToken[…]` or `ExpoPushToken[…]` → `expo`.
+  2. Exactly 64 hex characters (any case) → `apns`.
+  3. Anything else → `fcm`.
+
+  Inference never yields `onesignal_sub`. A OneSignal subscription id must be
+  sent with an explicit `kind`.
+- **Storage.** An explicit `kind` replaces the stored kind. An inferred kind
+  never replaces an explicit one. `platform` and `push_env` replace the stored
+  value only when sent.
+- **Rotation.** The opt-out entry for the old token needs only `channel`,
+  `address` and `opted_in: false`. The server matches it by address.
+- **Lenient.** These fields never fail a request. The server drops an unknown
+  value, and drops the fields on an `email` or `sms` entry. A dropped `kind`
+  falls back to inference.
+- **Delivery.** The server sends to every recent opted-in device of the user.
+  It routes each token by its kind to the provider the app set for that kind.
+  A token whose kind has no provider is skipped with a reason; the other
+  devices still get the message. An app whose default provider is OneSignal
+  keeps sending tokens with an inferred kind through OneSignal; only an
+  explicit `kind` moves them.
+
+The [`kindInference`](conformance/push.json) table pins the inference rule.
+The `kindCases` flows pin the wire shape for SDKs that send these fields.
+SDKs that do not send them skip `kindCases`; the original `cases` never use
+them.
 
 Most of these flows are executable in
 [`conformance/push.json`](conformance/push.json) — including `reset`, the
