@@ -9,9 +9,10 @@ What the server does with the events client SDKs send on their own.
 
 A churn engine needs an activity signal it can trust. Before this contract an app had activity
 only where its developer, or a generated integration, added a `track()` call in the right place.
-Generated wiring misses events. The mobile SDKs therefore send six reserved events by default:
+Generated wiring misses events. The mobile SDKs therefore send seven reserved events by default:
 `app_installed`, `app_updated`, `app_opened`, `app_backgrounded`, `screen_viewed`,
-`push_opened`. Every app gets "days since last open" on day one.
+`push_opened`, `push_permission_changed`. Every app gets "days since last open" on day one, and
+the engine knows which devices can still receive push.
 
 ## Reserved names are legal without registration
 
@@ -39,7 +40,7 @@ Each reserved event declares `countsAsActivity` in the catalogue.
 
 | counts as activity | does not count |
 |---|---|
-| `app_opened`, `screen_viewed`, `push_opened` | `app_installed`, `app_updated`, `app_backgrounded` |
+| `app_opened`, `screen_viewed`, `push_opened` | `app_installed`, `app_updated`, `app_backgrounded`, `push_permission_changed` |
 
 "Activity" means the user did something in the app: it drives last-active, active days, and the
 lifecycle stages. Events that only describe the app (an install, an update, the app going to the

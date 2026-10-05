@@ -1,9 +1,9 @@
 # Whisperr integration contracts — 2.0.0
 
-Status: **`2.0.0-rc6` — implementation working baseline.** This revision reserves six
+Status: **`2.0.0-rc6` — implementation working baseline.** This revision reserves seven
 automatic SDK events (`app_installed`, `app_updated`, `app_opened`, `app_backgrounded`,
-`screen_viewed`, `push_opened`) that are legal for every app without registration
-([11](11-automatic-events.md)). rc5 added the optional anonymous lane to the SDK profile:
+`screen_viewed`, `push_opened`, `push_permission_changed`) that are legal for every app
+without registration ([11](11-automatic-events.md)). rc5 added the optional anonymous lane to the SDK profile:
 pre-identify events may carry `anonymous_id`, and `identify` carrying that handle is the
 explicit promotion ([10](10-sdk-compatibility.md)). rc4 corrected provider assumptions discovered
 while building against rc3. It is not evidence of deployed callbacks, app

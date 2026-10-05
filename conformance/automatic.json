@@ -183,6 +183,26 @@
           "description": "Copied from the notification data when present."
         }
       }
+    },
+    {
+      "name": "push_permission_changed",
+      "trigger": "The SDK first learns the notification permission, or learns that it changed since the last value it sent. Mobile SDKs read it on each move to the foreground where the platform makes this cheap; the app can also report it.",
+      "automatic": "framework",
+      "countsAsActivity": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "required": true,
+          "enum": ["authorized", "provisional", "denied", "not_determined"],
+          "description": "The notification permission now."
+        },
+        "previous_status": {
+          "type": "string",
+          "required": false,
+          "enum": ["authorized", "provisional", "denied", "not_determined"],
+          "description": "The last status the SDK sent from this device. Omitted on the first report."
+        }
+      }
     }
   ],
   "cases": [
