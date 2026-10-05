@@ -3,7 +3,7 @@
 The single source of truth for the Whisperr integration contracts and for SDK ingestion
 behavior.
 
-## Integration contracts — `2.0.0-rc5`
+## Integration contracts — `2.0.0-rc6`
 
 [`contracts/`](contracts) holds the contracts the Whisperr Integration Program is built
 against: the canonical event envelope, source connection manifests, identity authority modes,
@@ -57,6 +57,11 @@ SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md
 - [`conformance/anonymous.json`](conformance/anonymous.json) — canonical
   anonymous-visitor flows (`anonymous_id` on pre-identify events, promotion on
   `identify`, rotation on `reset`) for the SDKs that implement the lane.
+- [`conformance/automatic.json`](conformance/automatic.json) — the reserved
+  automatic events (`app_installed`, `app_updated`, `app_opened`,
+  `app_backgrounded`, `screen_viewed`, `push_opened`) as a machine-readable
+  catalogue, plus the lifecycle flows that send them, for the SDKs that
+  implement them.
 - [`schemas/`](schemas) — JSON Schemas for the conformance fixtures.
 
 SDK tests default to the published fixtures:

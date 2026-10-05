@@ -1,9 +1,11 @@
 # Whisperr integration contracts — 2.0.0
 
-Status: **`2.0.0-rc5` — implementation working baseline.** This revision adds the
-optional anonymous lane to the SDK profile: pre-identify events may carry
-`anonymous_id`, and `identify` carrying that handle is the explicit promotion
-([10](10-sdk-compatibility.md)). rc4 corrected provider assumptions discovered
+Status: **`2.0.0-rc6` — implementation working baseline.** This revision reserves six
+automatic SDK events (`app_installed`, `app_updated`, `app_opened`, `app_backgrounded`,
+`screen_viewed`, `push_opened`) that are legal for every app without registration
+([11](11-automatic-events.md)). rc5 added the optional anonymous lane to the SDK profile:
+pre-identify events may carry `anonymous_id`, and `identify` carrying that handle is the
+explicit promotion ([10](10-sdk-compatibility.md)). rc4 corrected provider assumptions discovered
 while building against rc3. It is not evidence of deployed callbacks, app
 approval, or production readiness. RevenueCat remains deferred by the product
 owner's explicit decision; its fixtures are retained.
@@ -40,6 +42,7 @@ source → connection (02) → envelope (01) → identity (03) + consent (04)
 | [08](08-coverage-health.md) | Coverage and health states | What "connected" honestly means |
 | [09](09-error-quarantine.md) | Error and quarantine taxonomy | Where a failure goes, and how it is repaired |
 | [10](10-sdk-compatibility.md) | SDK compatibility | Why the 10 existing SDKs need no release |
+| [11](11-automatic-events.md) | Automatic events | Which SDK events need no registration, and which count as activity |
 
 Per-connector fixtures live in [`../conformance/connectors/`](../conformance/connectors/).
 

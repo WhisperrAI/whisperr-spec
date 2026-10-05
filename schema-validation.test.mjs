@@ -11,8 +11,8 @@ const root = dirname(fileURLToPath(import.meta.url));
 test('all committed schemas compile and fixtures structurally conform', () => {
   const result = validateSchemas(root);
   assert.deepEqual(result.errors, []);
-  assert.equal(result.schemaCount, 14);
-  assert.equal(result.fixtureCount, 16);
+  assert.equal(result.schemaCount, 15);
+  assert.equal(result.fixtureCount, 17);
 });
 
 for (const [name, file, mutate] of [
@@ -22,6 +22,9 @@ for (const [name, file, mutate] of [
   ['required property', 'conformance/connectors/supabase.json', d => { delete d.manifest.provider; }],
   ['unknown local reference', 'conformance/connectors/supabase.json', d => { d.$schema = '../../schemas/not-present.json'; }],
   ['unknown remote reference', 'schemas/connector-fixture.schema.json', d => { d.properties.manifest.$ref = 'https://example.invalid/missing.json'; }],
+  ['unknown automatic lifecycle step', 'conformance/automatic.json', d => { d.cases[0].steps.push({ sleep: true }); }],
+  ['automatic platform outside enum', 'conformance/automatic.json', d => { d.cases[0].device.platform = 'windows'; }],
+  ['automatic event name not snake_case', 'conformance/automatic.json', d => { d.reserved[0].name = 'AppInstalled'; }],
   ['unreferenced invalid regex', 'schemas/relay.schema.json', d => { d.$defs.payload.propertyNames.not.pattern = '(?i)email'; }],
 ]) {
   test(`validator rejects ${name}`, () => {

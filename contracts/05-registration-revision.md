@@ -111,7 +111,9 @@ can create a plan; a customer with six connections and no committed universe can
 
 1. A `failed` revision leaves no events. (crash-injection test)
 2. `event_id` is stable across revisions and across the F10 backfill.
-3. An event code not in a `committed` revision is not ingestible — it quarantines.
+3. An event code not in a `committed` revision is not ingestible — it quarantines. The one
+   exception is a reserved automatic event on the `sdk` profile
+   ([11](11-automatic-events.md)), which is legal for every app.
 4. All four executors produce byte-identical revisions for the same input (X20 parity suite).
 5. Superseding never deletes history.
 6. `mode: test` events can validate a revision; they can never commit one on their own.
