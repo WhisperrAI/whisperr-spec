@@ -23,7 +23,8 @@ for (const [name, file, mutate] of [
   ['unknown local reference', 'conformance/connectors/supabase.json', d => { d.$schema = '../../schemas/not-present.json'; }],
   ['unknown remote reference', 'schemas/connector-fixture.schema.json', d => { d.properties.manifest.$ref = 'https://example.invalid/missing.json'; }],
   ['unknown automatic lifecycle step', 'conformance/automatic.json', d => { d.cases[0].steps.push({ sleep: true }); }],
-  ['automatic platform outside enum', 'conformance/automatic.json', d => { d.cases[0].device.platform = 'windows'; }],
+  ['automatic device offset type', 'conformance/automatic.json', d => { d.cases[0].device.timezoneOffsetMinutes = '+02:00'; }],
+  ['automatic device with zone and offset', 'conformance/automatic.json', d => { d.cases[0].device.timezoneOffsetMinutes = 120; }],
   ['automatic event name not snake_case', 'conformance/automatic.json', d => { d.reserved[0].name = 'AppInstalled'; }],
   ['unreferenced invalid regex', 'schemas/relay.schema.json', d => { d.$defs.payload.propertyNames.not.pattern = '(?i)email'; }],
 ]) {

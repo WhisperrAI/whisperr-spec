@@ -61,6 +61,12 @@ for r in auto.get("reserved", []):
             err(f, f"{r['name']}.{key} type differs from the common property of the same name")
 PY_TYPES = {"string": str, "integer": int, "boolean": bool}
 def check_value(where, key, spec, value):
+    if "placeholder" in spec:
+        # The harness cannot control this value (it is the SDK's own), so the
+        # fixture must carry the token, never a literal.
+        if value != spec["placeholder"]:
+            err(f, f"{where}: {key} must be the placeholder {spec['placeholder']!r}, got {value!r}")
+        return
     want = PY_TYPES[spec["type"]]
     # bool is a subclass of int in Python; an integer property must not take a bool.
     if not isinstance(value, want) or (want is int and isinstance(value, bool)):
@@ -81,6 +87,8 @@ for c in auto.get("cases", []):
         for key, spec in allowed.items():
             if spec.get("required") and key not in props:
                 err(f, f"{where}: {e['event_type']} must carry {key!r}")
+        if "timezone" in props and "timezone_offset_minutes" in props:
+            err(f, f"{where}: timezone_offset_minutes is only a fallback; never send it with timezone")
 
 # ---------------------------------------------------------------- 4. connector fixtures
 LAUNCH = {"supabase","clerk","auth0","stripe","shopify","woocommerce",

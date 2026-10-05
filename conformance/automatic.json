@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/automatic.schema.json",
   "version": 1,
-  "description": "The reserved automatic events (SPEC.md → Automatic events) and their conformance flows. `commonProperties` and `reserved` are the machine-readable catalogue: SDKs, the server, and the PR agent read the names from here. Each case runs on a harness that controls what the platform reports (`device`, and the app version and build on each `launch`), the lifecycle signals, and the SDK clock. A case starts on the storage named by `storage` (default `empty`); storage survives `terminate`. `launch` starts the process: the harness builds the client with the case `config` (automatic events on unless `config.automaticEvents` is false), calls identify('user_1') right after it, and then delivers the first foreground (a cold start). `background` and `foreground` move the harness clock forward by `afterMs` and then deliver that signal. `terminate` ends the process with no further signal. `screen` calls the SDK's manual screen API. `pushOpened` hands the notification data payload to the SDK's push-open API. The harness flushes after every step, then collects every event the case sent on /v1/events/batch and /v1/events/track, in send order, and asserts that they equal `expectedEvents`: the same `event_type` and exactly the same `properties`, after it removes identity fields, `occurred_at`, and `context` (context must still carry `$message_id`, as wire.json pins). Identify requests are not compared. An SDK whose lifecycle clock the harness cannot set checks instead that `foreground_ms` is a non-negative integer. SDKs that also implement automatic screen capture run these cases with it off.",
+  "description": "The reserved automatic events (SPEC.md → Automatic events) and their conformance flows. `commonProperties` and `reserved` are the machine-readable catalogue: SDKs, the server, and the PR agent read the names from here. Each case runs on a harness that controls what the platform reports (`device`, and the app version and build on each `launch`), the lifecycle signals, and the SDK clock. A case starts on the storage named by `storage` (default `empty`); storage survives `terminate`. The values the harness cannot control are placeholders: `$platform` (bound to the SDK's own `platform`, and `os_name` carries the same value), `$sdk_name`, and `$sdk_version`; the harness substitutes its SDK's values and checks them against `commonProperties`. `launch` starts the process: the harness builds the client with the case `config` (automatic events on unless `config.automaticEvents` is false), calls identify('user_1') right after it, and then delivers the first foreground (a cold start). `background` and `foreground` move the harness clock forward by `afterMs` and then deliver that signal. `terminate` ends the process with no further signal. `screen` calls the SDK's manual screen API. `pushOpened` hands the notification data payload to the SDK's push-open API. The harness flushes after every step, then collects every event the case sent on /v1/events/batch and /v1/events/track, in send order, and asserts that they equal `expectedEvents`: the same `event_type` and exactly the same `properties`, after it removes identity fields, `occurred_at`, and `context` (context must still carry `$message_id`, as wire.json pins). Identify requests are not compared. An SDK whose lifecycle clock the harness cannot set checks instead that `foreground_ms` is a non-negative integer. SDKs that also implement automatic screen capture run these cases with it off. Every OTHER conformance harness (wire.json, behavior.json, push.json, anonymous.json) runs the SDK with automatic events disabled, so those fixtures see only the requests their steps cause.",
   "commonProperties": {
     "app_version": {
       "type": "string",
@@ -13,25 +13,50 @@
       "required": false,
       "description": "The build number as a string (CFBundleVersion, versionCode)."
     },
-    "os_name": {
-      "type": "string",
-      "required": false,
-      "description": "The operating system name as the platform reports it, for example iOS, iPadOS, Android."
-    },
-    "os_version": {
-      "type": "string",
-      "required": false,
-      "description": "The operating system version as the platform reports it."
-    },
     "platform": {
       "type": "string",
       "required": true,
-      "description": "The SDK runtime family.",
+      "description": "The OS family, never the framework name: an iPad is ios, a React Native app on Android is android.",
       "enum": [
         "ios",
         "android",
         "web"
-      ]
+      ],
+      "placeholder": "$platform"
+    },
+    "os_name": {
+      "type": "string",
+      "required": true,
+      "description": "The same lowercase OS family value as platform.",
+      "enum": [
+        "ios",
+        "android",
+        "web"
+      ],
+      "placeholder": "$platform"
+    },
+    "os_version": {
+      "type": "string",
+      "required": false,
+      "description": "The operating system version as the platform reports it, for example 18.2 or 15."
+    },
+    "sdk_name": {
+      "type": "string",
+      "required": true,
+      "description": "The SDK that sent the event.",
+      "enum": [
+        "whisperr-swift",
+        "whisperr-flutter",
+        "whisperr-react-native",
+        "whisperr-web"
+      ],
+      "placeholder": "$sdk_name"
+    },
+    "sdk_version": {
+      "type": "string",
+      "required": true,
+      "description": "The SDK release version, for example 1.8.0.",
+      "placeholder": "$sdk_version"
     },
     "locale": {
       "type": "string",
@@ -42,6 +67,11 @@
       "type": "string",
       "required": false,
       "description": "IANA time zone name of the device, for example Europe/Berlin. Never an abbreviation or an offset."
+    },
+    "timezone_offset_minutes": {
+      "type": "integer",
+      "required": false,
+      "description": "Minutes east of UTC at send time, for example 120. Sent only when the IANA name is unknown; never together with timezone."
     }
   },
   "reserved": [
@@ -153,9 +183,7 @@
     {
       "name": "first_launch_sends_app_installed_then_app_opened",
       "device": {
-        "osName": "iOS",
         "osVersion": "18.2",
-        "platform": "ios",
         "locale": "de-DE",
         "timezone": "Europe/Berlin"
       },
@@ -174,9 +202,11 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -187,9 +217,11 @@
             "app_version": "1.4.0",
             "cold_start": true,
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         }
@@ -198,9 +230,7 @@
     {
       "name": "relaunch_on_same_version_sends_only_app_opened",
       "device": {
-        "osName": "iOS",
         "osVersion": "18.2",
-        "platform": "ios",
         "locale": "de-DE",
         "timezone": "Europe/Berlin"
       },
@@ -233,9 +263,11 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -246,9 +278,11 @@
             "app_version": "1.4.0",
             "cold_start": true,
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -259,9 +293,11 @@
             "app_version": "1.4.0",
             "foreground_ms": 30000,
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -272,9 +308,11 @@
             "app_version": "1.4.0",
             "cold_start": true,
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         }
@@ -283,9 +321,7 @@
     {
       "name": "new_version_sends_app_updated_with_previous_version",
       "device": {
-        "osName": "iOS",
         "osVersion": "18.2",
-        "platform": "ios",
         "locale": "de-DE",
         "timezone": "Europe/Berlin"
       },
@@ -313,9 +349,11 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -326,9 +364,11 @@
             "app_version": "1.4.0",
             "cold_start": true,
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -338,11 +378,13 @@
             "app_build": "150",
             "app_version": "1.5.0",
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
             "previous_build": "140",
             "previous_version": "1.4.0",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -353,9 +395,11 @@
             "app_version": "1.5.0",
             "cold_start": true,
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         }
@@ -364,9 +408,7 @@
     {
       "name": "new_build_of_same_version_is_an_update",
       "device": {
-        "osName": "Android",
         "osVersion": "15",
-        "platform": "android",
         "locale": "pt-BR",
         "timezone": "America/Sao_Paulo"
       },
@@ -394,9 +436,11 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "pt-BR",
-            "os_name": "Android",
+            "os_name": "$platform",
             "os_version": "15",
-            "platform": "android",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "America/Sao_Paulo"
           }
         },
@@ -407,9 +451,11 @@
             "app_version": "1.4.0",
             "cold_start": true,
             "locale": "pt-BR",
-            "os_name": "Android",
+            "os_name": "$platform",
             "os_version": "15",
-            "platform": "android",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "America/Sao_Paulo"
           }
         },
@@ -419,11 +465,13 @@
             "app_build": "141",
             "app_version": "1.4.0",
             "locale": "pt-BR",
-            "os_name": "Android",
+            "os_name": "$platform",
             "os_version": "15",
-            "platform": "android",
+            "platform": "$platform",
             "previous_build": "140",
             "previous_version": "1.4.0",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "America/Sao_Paulo"
           }
         },
@@ -434,9 +482,11 @@
             "app_version": "1.4.0",
             "cold_start": true,
             "locale": "pt-BR",
-            "os_name": "Android",
+            "os_name": "$platform",
             "os_version": "15",
-            "platform": "android",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "America/Sao_Paulo"
           }
         }
@@ -446,9 +496,7 @@
       "name": "sdk_upgrade_on_existing_install_is_not_an_install",
       "storage": "legacy_sdk_state",
       "device": {
-        "osName": "iOS",
         "osVersion": "18.2",
-        "platform": "ios",
         "locale": "de-DE",
         "timezone": "Europe/Berlin"
       },
@@ -468,9 +516,11 @@
             "app_version": "1.4.0",
             "cold_start": true,
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         }
@@ -479,9 +529,7 @@
     {
       "name": "warm_foreground_and_background_carry_foreground_ms",
       "device": {
-        "osName": "Android",
         "osVersion": "15",
-        "platform": "android",
         "locale": "pt-BR",
         "timezone": "America/Sao_Paulo"
       },
@@ -515,9 +563,11 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "pt-BR",
-            "os_name": "Android",
+            "os_name": "$platform",
             "os_version": "15",
-            "platform": "android",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "America/Sao_Paulo"
           }
         },
@@ -528,9 +578,11 @@
             "app_version": "1.4.0",
             "cold_start": true,
             "locale": "pt-BR",
-            "os_name": "Android",
+            "os_name": "$platform",
             "os_version": "15",
-            "platform": "android",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "America/Sao_Paulo"
           }
         },
@@ -541,9 +593,11 @@
             "app_version": "1.4.0",
             "foreground_ms": 4200,
             "locale": "pt-BR",
-            "os_name": "Android",
+            "os_name": "$platform",
             "os_version": "15",
-            "platform": "android",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "America/Sao_Paulo"
           }
         },
@@ -554,9 +608,11 @@
             "app_version": "1.4.0",
             "cold_start": false,
             "locale": "pt-BR",
-            "os_name": "Android",
+            "os_name": "$platform",
             "os_version": "15",
-            "platform": "android",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "America/Sao_Paulo"
           }
         },
@@ -567,9 +623,11 @@
             "app_version": "1.4.0",
             "foreground_ms": 1500,
             "locale": "pt-BR",
-            "os_name": "Android",
+            "os_name": "$platform",
             "os_version": "15",
-            "platform": "android",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "America/Sao_Paulo"
           }
         }
@@ -578,9 +636,7 @@
     {
       "name": "manual_screen_sends_screen_viewed",
       "device": {
-        "osName": "iOS",
         "osVersion": "18.2",
-        "platform": "ios",
         "locale": "de-DE",
         "timezone": "Europe/Berlin"
       },
@@ -602,9 +658,11 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -615,9 +673,11 @@
             "app_version": "1.4.0",
             "cold_start": true,
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -627,10 +687,12 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
             "screen_name": "Paywall",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         }
@@ -639,9 +701,7 @@
     {
       "name": "push_open_sends_push_opened_with_message_id_and_deep_link",
       "device": {
-        "osName": "iOS",
         "osVersion": "18.2",
-        "platform": "ios",
         "locale": "de-DE",
         "timezone": "Europe/Berlin"
       },
@@ -667,9 +727,11 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -680,9 +742,11 @@
             "app_version": "1.4.0",
             "cold_start": true,
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -693,9 +757,11 @@
             "app_version": "1.4.0",
             "deep_link": "myapp://offers/annual",
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin",
             "whisperr_message_id": "msg_7f3a"
           }
@@ -705,9 +771,7 @@
     {
       "name": "push_open_without_deep_link_omits_the_key",
       "device": {
-        "osName": "Android",
         "osVersion": "15",
-        "platform": "android",
         "locale": "pt-BR",
         "timezone": "America/Sao_Paulo"
       },
@@ -731,9 +795,11 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "pt-BR",
-            "os_name": "Android",
+            "os_name": "$platform",
             "os_version": "15",
-            "platform": "android",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "America/Sao_Paulo"
           }
         },
@@ -744,9 +810,11 @@
             "app_version": "1.4.0",
             "cold_start": true,
             "locale": "pt-BR",
-            "os_name": "Android",
+            "os_name": "$platform",
             "os_version": "15",
-            "platform": "android",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "America/Sao_Paulo"
           }
         },
@@ -756,9 +824,11 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "pt-BR",
-            "os_name": "Android",
+            "os_name": "$platform",
             "os_version": "15",
-            "platform": "android",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "America/Sao_Paulo",
             "whisperr_message_id": "msg_7f3b"
           }
@@ -768,9 +838,7 @@
     {
       "name": "push_open_without_whisperr_message_id_sends_nothing",
       "device": {
-        "osName": "iOS",
         "osVersion": "18.2",
-        "platform": "ios",
         "locale": "de-DE",
         "timezone": "Europe/Berlin"
       },
@@ -795,9 +863,11 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -808,9 +878,11 @@
             "app_version": "1.4.0",
             "cold_start": true,
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         }
@@ -822,9 +894,7 @@
         "automaticEvents": false
       },
       "device": {
-        "osName": "iOS",
         "osVersion": "18.2",
-        "platform": "ios",
         "locale": "de-DE",
         "timezone": "Europe/Berlin"
       },
@@ -861,10 +931,12 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
             "screen_name": "Home",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin"
           }
         },
@@ -874,9 +946,11 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "locale": "de-DE",
-            "os_name": "iOS",
+            "os_name": "$platform",
             "os_version": "18.2",
-            "platform": "ios",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
             "timezone": "Europe/Berlin",
             "whisperr_message_id": "msg_7f3c"
           }
@@ -884,9 +958,11 @@
       ]
     },
     {
-      "name": "values_the_runtime_cannot_supply_are_omitted",
+      "name": "offset_is_sent_only_when_the_iana_zone_is_unknown",
       "device": {
-        "platform": "web"
+        "osVersion": "15",
+        "locale": "pt-BR",
+        "timezoneOffsetMinutes": -180
       },
       "steps": [
         {
@@ -902,7 +978,13 @@
           "properties": {
             "app_build": "140",
             "app_version": "1.4.0",
-            "platform": "web"
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone_offset_minutes": -180
           }
         },
         {
@@ -911,7 +993,50 @@
             "app_build": "140",
             "app_version": "1.4.0",
             "cold_start": true,
-            "platform": "web"
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone_offset_minutes": -180
+          }
+        }
+      ]
+    },
+    {
+      "name": "values_the_runtime_cannot_supply_are_omitted",
+      "device": {},
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "os_name": "$platform",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "os_name": "$platform",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version"
           }
         }
       ]

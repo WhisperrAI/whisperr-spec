@@ -297,15 +297,19 @@ Every automatic event also carries these **flat** keys in `properties`:
 |---|---|
 | `app_version` | User-facing version as a string — `CFBundleShortVersionString`, `versionName` |
 | `app_build` | Build number as a string — `CFBundleVersion`, `versionCode` |
-| `os_name` | OS name as the platform reports it — `iOS`, `iPadOS`, `Android` |
-| `os_version` | OS version as the platform reports it — `18.2`, `15` |
-| `platform` | `ios` \| `android` \| `web` — always present |
+| `platform` | OS family: `ios` \| `android` \| `web` — always present. Never the framework name: an iPad is `ios`; React Native and Flutter on Android are `android`. |
+| `os_name` | The same lowercase family value as `platform` — always present |
+| `os_version` | OS version as a string — `18.2`, `15` |
+| `sdk_name` | `whisperr-swift` \| `whisperr-flutter` \| `whisperr-react-native` \| `whisperr-web` — always present |
+| `sdk_version` | The SDK release version as a string — always present |
 | `locale` | BCP 47 tag — `de-DE` (same format as the reserved trait) |
 | `timezone` | IANA name — `Europe/Berlin` (same format as the reserved trait) |
+| `timezone_offset_minutes` | Integer minutes east of UTC — `120`. Only when the IANA name is unknown; never together with `timezone` |
 
 - **No value, no key.** An SDK that cannot get a value omits the key. It never
-  sends a guess. Flutter without an IANA source omits `timezone`; it never
-  puts an offset or an abbreviation there.
+  sends a guess. Flutter without an IANA source omits `timezone` and sends
+  `timezone_offset_minutes` instead (as it does for the identify trait); it
+  never puts an offset or an abbreviation in `timezone`.
 - The keys are flat (`os_name`, not `os.name`) and live in `properties`, never
   in `context` and never top-level.
 - No device model, device name, advertising ID, or IP address. These can
@@ -361,7 +365,8 @@ Every automatic event also carries these **flat** keys in `properties`:
 - **Accepted for every app without registration.** An app never has to
   register a reserved name. The server stores the event as a known (mapped)
   event even when the app's event registry does not list it. It does not
-  validate the properties: unknown extra keys are kept, and duplicate
+  validate the properties: unknown extra keys are kept, both `timezone` and
+  `timezone_offset_minutes` are accepted, and duplicate
   `app_installed` / `app_updated` events from a reinstall are tolerated.
 - **A customer event with the same name still works.** An app may register a
   reserved name (for example a PR agent that adds `app_opened`). The
@@ -376,6 +381,12 @@ Every automatic event also carries these **flat** keys in `properties`:
 These flows are executable in
 [`conformance/automatic.json`](conformance/automatic.json). The server-side
 meaning is in [`contracts/11`](contracts/11-automatic-events.md).
+
+**Conformance harnesses for every other fixture** (`wire.json`,
+`behavior.json`, `push.json`, `anonymous.json`) run the SDK with automatic
+events **disabled**. Those fixtures pin exact request sequences, and an
+automatic `app_opened` would add requests their steps did not cause. Only the
+`automatic.json` harness turns them on.
 
 ## Delivery contract
 
