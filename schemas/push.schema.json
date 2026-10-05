@@ -31,7 +31,7 @@
       "description": "Token type. fcm = FCM registration token; apns = raw APNs device token (lowercase hex); expo = Expo push token; onesignal_sub = OneSignal subscription id.",
       "enum": ["fcm", "apns", "expo", "onesignal_sub"]
     },
-    "pushPlatform": { "enum": ["ios", "android", "web"] },
+    "pushPlatform": { "enum": ["ios", "android", "web", "macos", "windows", "linux"] },
     "pushEnv": {
       "description": "APNs environment of the token. A debug build gets sandbox tokens.",
       "enum": ["production", "sandbox"]

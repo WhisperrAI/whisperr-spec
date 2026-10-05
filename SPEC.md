@@ -106,7 +106,8 @@ PostHog project key, not a secret.
   - `verified` (bool, optional) — omit unless set.
   - `kind` (string, optional, `push` only) — `fcm` | `apns` | `expo` |
     `onesignal_sub`. The token type. See [Token kind](#token-kind).
-  - `platform` (string, optional, `push` only) — `ios` | `android` | `web`.
+  - `platform` (string, optional, `push` only) — `ios` | `android` | `web` |
+    `macos` | `windows` | `linux`.
   - `push_env` (string, optional, `push` only) — `production` | `sandbox`. The
     APNs environment of the token.
 
@@ -272,17 +273,20 @@ three are optional, so an SDK built before them keeps working.
 
   Inference never yields `onesignal_sub`. A OneSignal subscription id must be
   sent with an explicit `kind`.
-- **Storage.** An explicit `kind` replaces the stored kind. A missing `kind`
-  keeps the stored kind; on the first write the server stores the inferred
-  kind. `platform` and `push_env` replace the stored value only when sent.
+- **Storage.** An explicit `kind` replaces the stored kind. An inferred kind
+  never replaces an explicit one. `platform` and `push_env` replace the stored
+  value only when sent.
 - **Rotation.** The opt-out entry for the old token needs only `channel`,
   `address` and `opted_in: false`. The server matches it by address.
-- **Validation.** An unknown value, or one of these fields on an `email` or
-  `sms` entry, is a `400`.
-- **Delivery.** The server sends to every opted-in device of the user. It
-  routes each token by its kind to the provider the app set for that kind. A
-  token whose kind has no provider is skipped with a reason; the other devices
-  still get the message.
+- **Lenient.** These fields never fail a request. The server drops an unknown
+  value, and drops the fields on an `email` or `sms` entry. A dropped `kind`
+  falls back to inference.
+- **Delivery.** The server sends to every recent opted-in device of the user.
+  It routes each token by its kind to the provider the app set for that kind.
+  A token whose kind has no provider is skipped with a reason; the other
+  devices still get the message. An app whose default provider is OneSignal
+  keeps sending tokens with an inferred kind through OneSignal; only an
+  explicit `kind` moves them.
 
 The [`kindInference`](conformance/push.json) table pins the inference rule.
 The `kindCases` flows pin the wire shape for SDKs that send these fields.
