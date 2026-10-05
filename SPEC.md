@@ -16,6 +16,10 @@ this contract, so the fixtures pin the expected behavior:
 - [`conformance/anonymous.json`](conformance/anonymous.json) pins the anonymous
   visitor lane (`anonymous_id` before `identify()`, promotion on `identify()`,
   rotation on `reset()`) for the SDKs that implement it (browser first).
+- [`conformance/automatic.json`](conformance/automatic.json) holds the reserved
+  automatic events (install, update, open, background, screen, push open) as a
+  machine-readable catalogue, and pins the flows that send them for the SDKs
+  that implement them (mobile: Swift, React Native, Flutter, Kotlin).
 
 ## Endpoints
 
@@ -264,6 +268,126 @@ it is covered by per-SDK unit tests.
   Retiring it needs a product decision (server-side retirement on user switch
   vs. SDK-side) and is tracked separately; apps that hand one device between
   users should call `reset()` on logout.
+
+## Automatic events
+
+Client SDKs send a small set of events on their own, so every app has an
+activity signal on day one without extra `track()` calls. These names are
+**reserved**. Each one is an ordinary `<event>` on `/v1/events/batch`: the wire
+format does not change.
+
+| `event_type` | When the SDK sends it | Own properties | User activity |
+|---|---|---|---|
+| `app_installed` | First launch of an install | `app_version`, `app_build` | no |
+| `app_updated` | A launch where the app version or build differs from the stored one | `app_version`, `app_build`, `previous_version`, `previous_build` | no |
+| `app_opened` | Every move to the foreground, including the cold start | `cold_start` (bool) | **yes** |
+| `app_backgrounded` | Every move to the background | `foreground_ms` (int) | no |
+| `screen_viewed` | The app calls the screen API; automatic only where the framework makes it cheap | `screen_name` | **yes** |
+| `push_opened` | The user opens a notification whose data carries `whisperr_message_id` | `whisperr_message_id`, `deep_link` (optional) | **yes** |
+
+The full catalogue, with types and triggers, is machine-readable in
+[`conformance/automatic.json`](conformance/automatic.json) (`reserved`,
+`commonProperties`).
+
+### Common properties
+
+Every automatic event also carries these **flat** keys in `properties`:
+
+| Key | Format |
+|---|---|
+| `app_version` | User-facing version as a string — `CFBundleShortVersionString`, `versionName` |
+| `app_build` | Build number as a string — `CFBundleVersion`, `versionCode` |
+| `platform` | OS family: `ios` \| `android` \| `web` \| `macos` \| `windows` \| `linux` — always present. Never the framework name: an iPad is `ios`; React Native and Flutter on Android are `android`; Flutter desktop is `macos`, `windows`, or `linux`. |
+| `os_name` | The same lowercase family value as `platform` — always present |
+| `os_version` | OS version as a string — `18.2`, `15` |
+| `sdk_name` | `whisperr-swift` \| `whisperr-flutter` \| `whisperr-react-native` \| `whisperr-web` — always present |
+| `sdk_version` | The SDK release version as a string — always present |
+| `locale` | BCP 47 tag — `de-DE` (same format as the reserved trait) |
+| `timezone` | IANA name — `Europe/Berlin` (same format as the reserved trait) |
+| `timezone_offset_minutes` | Integer minutes east of UTC — `120`. Only when the IANA name is unknown; never together with `timezone` |
+
+- **No value, no key.** An SDK that cannot get a value omits the key. It never
+  sends a guess. Flutter without an IANA source omits `timezone` and sends
+  `timezone_offset_minutes` instead (as it does for the identify trait); it
+  never puts an offset or an abbreviation in `timezone`.
+- The keys are flat (`os_name`, not `os.name`) and live in `properties`, never
+  in `context` and never top-level.
+- No device model, device name, advertising ID, or IP address. These can
+  fingerprint a person and the engine does not need them.
+
+### SDK rules
+
+- **On by default.** Each SDK has one switch that turns all automatic
+  lifecycle events off (the name follows the SDK's style, for example
+  `automaticEvents: false`). The switch also stops any automatic screen or push
+  capture. Explicit calls to the screen API or the push-open API still send.
+- **Install and update come from a stored version.** The SDK stores the last
+  app version and build it saw, next to its queue, and compares on each launch:
+  - nothing stored, and no other SDK state → `app_installed`;
+  - something stored that differs (version *or* build) → `app_updated` with the
+    stored values as `previous_version` / `previous_build`;
+  - the same → nothing.
+  The SDK sends `app_installed` / `app_updated` before that launch's
+  `app_opened`, then stores the new values. While the switch is off the SDK
+  still keeps the stored values current, so turning it on later does not
+  report a false install.
+- **An SDK upgrade is not an install.** When the SDK finds state an earlier SDK
+  version wrote (a stored user, an anonymous handle, or a queue) but no stored
+  app version, it stores the version and sends nothing.
+- **`app_opened` on every foreground.** `cold_start` is `true` for the first
+  foreground of the process and `false` for a return from the background.
+- **`app_backgrounded` carries `foreground_ms`**: whole milliseconds since the
+  matching `app_opened`, measured on a monotonic clock. The SDK flushes after it
+  queues this event (the existing flush-on-background).
+- **`screen_viewed`.** Every mobile SDK exposes a manual screen API that sends
+  `screen_viewed` with `screen_name`. Automatic capture is optional and only
+  where the framework gives a cheap hook (React Navigation / Expo Router,
+  Flutter `NavigatorObserver`). UIKit and SwiftUI have no reliable screen name,
+  so Swift capture stays explicit (a SwiftUI view modifier that calls the
+  screen API is fine).
+- **`push_opened` only for Whisperr messages.** The SDK reads
+  `whisperr_message_id` from the notification data and copies `deep_link` when
+  the data has one. A notification without `whisperr_message_id` sends nothing.
+- **Identity is unchanged.** Automatic events follow the same rules as any
+  `track()`: `external_user_id` after `identify()`; before it, the anonymous
+  lane or the SDK's local pre-identify buffer. An automatic event never throws
+  before `identify()`.
+- **Do not double-track.** A manual `track("app_opened")` still works, but it
+  duplicates the automatic event. Apps that already track these names turn the
+  switch off. SDKs may log a debug warning for a manual `track()` with a
+  reserved name while the switch is on.
+- **Browser SDKs** may implement the lifecycle events (`platform: "web"`, page
+  load as the cold start, `visibilitychange` for foreground and background).
+  They are not required to.
+
+### Server rules
+
+- **Accepted for every app without registration.** An app never has to
+  register a reserved name. The server stores the event as a known (mapped)
+  event even when the app's event registry does not list it. It does not
+  validate the properties: unknown extra keys are kept, both `timezone` and
+  `timezone_offset_minutes` are accepted, an unknown `platform` value is
+  stored as sent (breakdowns group it as `other`), and duplicate
+  `app_installed` / `app_updated` events from a reinstall are tolerated.
+- **A customer event with the same name still works.** An app may register a
+  reserved name (for example a PR agent that adds `app_opened`). The
+  registration supplies the label and schema; the code keeps its meaning.
+- **Activity.** Only `app_opened`, `screen_viewed`, and `push_opened` (and the
+  app's own events) make a user active. `app_installed`, `app_updated`, and
+  `app_backgrounded` describe the app, not a user choice, and never count as
+  activity.
+- **Derived events can never use these names.** They are raw events reported
+  by the device.
+
+These flows are executable in
+[`conformance/automatic.json`](conformance/automatic.json). The server-side
+meaning is in [`contracts/11`](contracts/11-automatic-events.md).
+
+**Conformance harnesses for every other fixture** (`wire.json`,
+`behavior.json`, `push.json`, `anonymous.json`) run the SDK with automatic
+events **disabled**. Those fixtures pin exact request sequences, and an
+automatic `app_opened` would add requests their steps did not cause. Only the
+`automatic.json` harness turns them on.
 
 ## Delivery contract
 

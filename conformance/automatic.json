@@ -1,0 +1,1051 @@
+{
+  "$schema": "../schemas/automatic.schema.json",
+  "version": 1,
+  "description": "The reserved automatic events (SPEC.md → Automatic events) and their conformance flows. `commonProperties` and `reserved` are the machine-readable catalogue: SDKs, the server, and the PR agent read the names from here. Each case runs on a harness that controls what the platform reports (`device`, and the app version and build on each `launch`), the lifecycle signals, and the SDK clock. A case starts on the storage named by `storage` (default `empty`); storage survives `terminate`. The values the harness cannot control are placeholders: `$platform` (bound to the SDK's own `platform`, and `os_name` carries the same value), `$sdk_name`, and `$sdk_version`; the harness substitutes its SDK's values and checks them against `commonProperties`. `launch` starts the process: the harness builds the client with the case `config` (automatic events on unless `config.automaticEvents` is false), calls identify('user_1') right after it, and then delivers the first foreground (a cold start). `background` and `foreground` move the harness clock forward by `afterMs` and then deliver that signal. `terminate` ends the process with no further signal. `screen` calls the SDK's manual screen API. `pushOpened` hands the notification data payload to the SDK's push-open API. The harness flushes after every step, then collects every event the case sent on /v1/events/batch and /v1/events/track, in send order, and asserts that they equal `expectedEvents`: the same `event_type` and exactly the same `properties`, after it removes identity fields, `occurred_at`, and `context` (context must still carry `$message_id`, as wire.json pins). Identify requests are not compared. An SDK whose lifecycle clock the harness cannot set checks instead that `foreground_ms` is a non-negative integer. SDKs that also implement automatic screen capture run these cases with it off. Every OTHER conformance harness (wire.json, behavior.json, push.json, anonymous.json) runs the SDK with automatic events disabled, so those fixtures see only the requests their steps cause.",
+  "commonProperties": {
+    "app_version": {
+      "type": "string",
+      "required": false,
+      "description": "The user-facing app version (CFBundleShortVersionString, versionName, package version)."
+    },
+    "app_build": {
+      "type": "string",
+      "required": false,
+      "description": "The build number as a string (CFBundleVersion, versionCode)."
+    },
+    "platform": {
+      "type": "string",
+      "required": true,
+      "description": "The OS family, never the framework name: an iPad is ios, a React Native app on Android is android, a Flutter desktop app is macos, windows or linux. Readers treat any other value as other; the server never rejects an event for it.",
+      "enum": [
+        "ios",
+        "android",
+        "web",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "placeholder": "$platform"
+    },
+    "os_name": {
+      "type": "string",
+      "required": true,
+      "description": "The same lowercase OS family value as platform.",
+      "enum": [
+        "ios",
+        "android",
+        "web",
+        "macos",
+        "windows",
+        "linux"
+      ],
+      "placeholder": "$platform"
+    },
+    "os_version": {
+      "type": "string",
+      "required": false,
+      "description": "The operating system version as the platform reports it, for example 18.2 or 15."
+    },
+    "sdk_name": {
+      "type": "string",
+      "required": true,
+      "description": "The SDK that sent the event.",
+      "enum": [
+        "whisperr-swift",
+        "whisperr-flutter",
+        "whisperr-react-native",
+        "whisperr-web"
+      ],
+      "placeholder": "$sdk_name"
+    },
+    "sdk_version": {
+      "type": "string",
+      "required": true,
+      "description": "The SDK release version, for example 1.8.0.",
+      "placeholder": "$sdk_version"
+    },
+    "locale": {
+      "type": "string",
+      "required": false,
+      "description": "BCP 47 language tag of the device, for example de-DE."
+    },
+    "timezone": {
+      "type": "string",
+      "required": false,
+      "description": "IANA time zone name of the device, for example Europe/Berlin. Never an abbreviation or an offset."
+    },
+    "timezone_offset_minutes": {
+      "type": "integer",
+      "required": false,
+      "description": "Minutes east of UTC at send time, for example 120. Sent only when the IANA name is unknown; never together with timezone."
+    }
+  },
+  "reserved": [
+    {
+      "name": "app_installed",
+      "trigger": "First launch of an install: no stored app version and no earlier SDK state.",
+      "automatic": "always",
+      "countsAsActivity": false,
+      "properties": {
+        "app_version": {
+          "type": "string",
+          "required": true,
+          "description": "Installed app version."
+        },
+        "app_build": {
+          "type": "string",
+          "required": true,
+          "description": "Installed build."
+        }
+      }
+    },
+    {
+      "name": "app_updated",
+      "trigger": "A launch where the app version or build differs from the stored one.",
+      "automatic": "always",
+      "countsAsActivity": false,
+      "properties": {
+        "app_version": {
+          "type": "string",
+          "required": true,
+          "description": "New app version."
+        },
+        "app_build": {
+          "type": "string",
+          "required": true,
+          "description": "New build."
+        },
+        "previous_version": {
+          "type": "string",
+          "required": true,
+          "description": "The stored app version before this launch."
+        },
+        "previous_build": {
+          "type": "string",
+          "required": true,
+          "description": "The stored build before this launch."
+        }
+      }
+    },
+    {
+      "name": "app_opened",
+      "trigger": "Every move to the foreground, including the cold start.",
+      "automatic": "always",
+      "countsAsActivity": true,
+      "properties": {
+        "cold_start": {
+          "type": "boolean",
+          "required": true,
+          "description": "true for the first foreground of the process, false for a return from the background."
+        }
+      }
+    },
+    {
+      "name": "app_backgrounded",
+      "trigger": "Every move to the background.",
+      "automatic": "always",
+      "countsAsActivity": false,
+      "properties": {
+        "foreground_ms": {
+          "type": "integer",
+          "required": true,
+          "description": "Milliseconds since the matching app_opened."
+        }
+      }
+    },
+    {
+      "name": "screen_viewed",
+      "trigger": "The app calls the SDK screen API, or a framework navigation hook the SDK installs.",
+      "automatic": "framework",
+      "countsAsActivity": true,
+      "properties": {
+        "screen_name": {
+          "type": "string",
+          "required": true,
+          "description": "The screen name the app or the navigation framework gives."
+        }
+      }
+    },
+    {
+      "name": "push_opened",
+      "trigger": "The user opens a notification whose data carries whisperr_message_id.",
+      "automatic": "framework",
+      "countsAsActivity": true,
+      "properties": {
+        "whisperr_message_id": {
+          "type": "string",
+          "required": true,
+          "description": "Copied from the notification data."
+        },
+        "deep_link": {
+          "type": "string",
+          "required": false,
+          "description": "Copied from the notification data when present."
+        }
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "first_launch_sends_app_installed_then_app_opened",
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        }
+      ]
+    },
+    {
+      "name": "relaunch_on_same_version_sends_only_app_opened",
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "background": {
+            "afterMs": 30000
+          }
+        },
+        {
+          "terminate": true
+        },
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_backgrounded",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "foreground_ms": 30000,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        }
+      ]
+    },
+    {
+      "name": "new_version_sends_app_updated_with_previous_version",
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "terminate": true
+        },
+        {
+          "launch": {
+            "appVersion": "1.5.0",
+            "appBuild": "150"
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_updated",
+          "properties": {
+            "app_build": "150",
+            "app_version": "1.5.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "previous_build": "140",
+            "previous_version": "1.4.0",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "150",
+            "app_version": "1.5.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        }
+      ]
+    },
+    {
+      "name": "new_build_of_same_version_is_an_update",
+      "device": {
+        "osVersion": "15",
+        "locale": "pt-BR",
+        "timezone": "America/Sao_Paulo"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "terminate": true
+        },
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "141"
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "America/Sao_Paulo"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "America/Sao_Paulo"
+          }
+        },
+        {
+          "event_type": "app_updated",
+          "properties": {
+            "app_build": "141",
+            "app_version": "1.4.0",
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "previous_build": "140",
+            "previous_version": "1.4.0",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "America/Sao_Paulo"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "141",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "America/Sao_Paulo"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sdk_upgrade_on_existing_install_is_not_an_install",
+      "storage": "legacy_sdk_state",
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        }
+      ]
+    },
+    {
+      "name": "warm_foreground_and_background_carry_foreground_ms",
+      "device": {
+        "osVersion": "15",
+        "locale": "pt-BR",
+        "timezone": "America/Sao_Paulo"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "background": {
+            "afterMs": 4200
+          }
+        },
+        {
+          "foreground": {
+            "afterMs": 600000
+          }
+        },
+        {
+          "background": {
+            "afterMs": 1500
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "America/Sao_Paulo"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "America/Sao_Paulo"
+          }
+        },
+        {
+          "event_type": "app_backgrounded",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "foreground_ms": 4200,
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "America/Sao_Paulo"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": false,
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "America/Sao_Paulo"
+          }
+        },
+        {
+          "event_type": "app_backgrounded",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "foreground_ms": 1500,
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "America/Sao_Paulo"
+          }
+        }
+      ]
+    },
+    {
+      "name": "manual_screen_sends_screen_viewed",
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "screen": "Paywall"
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "screen_viewed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "screen_name": "Paywall",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        }
+      ]
+    },
+    {
+      "name": "push_open_sends_push_opened_with_message_id_and_deep_link",
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "pushOpened": {
+            "whisperr_message_id": "msg_7f3a",
+            "deep_link": "myapp://offers/annual",
+            "title": "Your streak is waiting"
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "push_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "deep_link": "myapp://offers/annual",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin",
+            "whisperr_message_id": "msg_7f3a"
+          }
+        }
+      ]
+    },
+    {
+      "name": "push_open_without_deep_link_omits_the_key",
+      "device": {
+        "osVersion": "15",
+        "locale": "pt-BR",
+        "timezone": "America/Sao_Paulo"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "pushOpened": {
+            "whisperr_message_id": "msg_7f3b"
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "America/Sao_Paulo"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "America/Sao_Paulo"
+          }
+        },
+        {
+          "event_type": "push_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "America/Sao_Paulo",
+            "whisperr_message_id": "msg_7f3b"
+          }
+        }
+      ]
+    },
+    {
+      "name": "push_open_without_whisperr_message_id_sends_nothing",
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "pushOpened": {
+            "title": "Sent by another provider",
+            "deep_link": "myapp://news"
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        }
+      ]
+    },
+    {
+      "name": "off_switch_stops_lifecycle_events_but_not_manual_calls",
+      "config": {
+        "automaticEvents": false
+      },
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "background": {
+            "afterMs": 2000
+          }
+        },
+        {
+          "foreground": {
+            "afterMs": 5000
+          }
+        },
+        {
+          "screen": "Home"
+        },
+        {
+          "pushOpened": {
+            "whisperr_message_id": "msg_7f3c"
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "screen_viewed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "screen_name": "Home",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "push_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin",
+            "whisperr_message_id": "msg_7f3c"
+          }
+        }
+      ]
+    },
+    {
+      "name": "offset_is_sent_only_when_the_iana_zone_is_unknown",
+      "device": {
+        "osVersion": "15",
+        "locale": "pt-BR",
+        "timezoneOffsetMinutes": -180
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone_offset_minutes": -180
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "pt-BR",
+            "os_name": "$platform",
+            "os_version": "15",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone_offset_minutes": -180
+          }
+        }
+      ]
+    },
+    {
+      "name": "values_the_runtime_cannot_supply_are_omitted",
+      "device": {},
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "os_name": "$platform",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "os_name": "$platform",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version"
+          }
+        }
+      ]
+    }
+  ]
+}

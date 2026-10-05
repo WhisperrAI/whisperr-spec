@@ -69,6 +69,12 @@ Nothing below is required. An SDK that implements none of it stays fully conform
   visitors; executable in `conformance/anonymous.json`). An SDK that keeps buffering locally is
   unaffected.
 
+- The reserved automatic events (`app_installed`, `app_updated`, `app_opened`,
+  `app_backgrounded`, `screen_viewed`, `push_opened`) — ordinary track events an SDK sends on
+  its own ([`SPEC.md`](../SPEC.md) → Automatic events; executable in
+  `conformance/automatic.json`; server meaning in [11](11-automatic-events.md)). An SDK that
+  sends none of them stays conformant, and older SDK releases are unaffected.
+
 The first two are `context` keys, and `context` is already free-form in v1; `anonymous_id` is an
 optional top-level field the server accepts alongside `external_user_id` — so adding any of them
 is a *minor* version bump, not a breaking one.

@@ -41,8 +41,54 @@ for f, d in docs.items():
     if not os.path.exists(target): err(f, f"$schema points at a missing file: {ref}")
 
 # ---------------------------------------------------------------- 3. SDK fixtures untouched by 2.0.0
-for f in ("conformance/wire.json", "conformance/behavior.json", "conformance/push.json", "conformance/anonymous.json"):
+for f in ("conformance/wire.json", "conformance/behavior.json", "conformance/push.json", "conformance/anonymous.json",
+          "conformance/automatic.json"):
     if f not in docs: err(f, "SDK fixture missing — 2.0.0 must not remove it")
+
+# ---------------------------------------------------------------- 3b. automatic events match their catalogue
+# The JSON Schema pins the shapes. These checks tie every expected event to the
+# reserved catalogue in the same file, so a case cannot drift from the names
+# and property types the server and the SDKs read from that catalogue.
+auto = docs.get("conformance/automatic.json", {})
+f = "conformance/automatic.json"
+common = auto.get("commonProperties", {})
+reserved = {}
+for r in auto.get("reserved", []):
+    if r["name"] in reserved: err(f, f"reserved event {r['name']!r} is listed twice")
+    reserved[r["name"]] = r
+    for key in set(r.get("properties", {})) & set(common):
+        if r["properties"][key]["type"] != common[key]["type"]:
+            err(f, f"{r['name']}.{key} type differs from the common property of the same name")
+PY_TYPES = {"string": str, "integer": int, "boolean": bool}
+def check_value(where, key, spec, value):
+    if "placeholder" in spec:
+        # The harness cannot control this value (it is the SDK's own), so the
+        # fixture must carry the token, never a literal.
+        if value != spec["placeholder"]:
+            err(f, f"{where}: {key} must be the placeholder {spec['placeholder']!r}, got {value!r}")
+        return
+    want = PY_TYPES[spec["type"]]
+    # bool is a subclass of int in Python; an integer property must not take a bool.
+    if not isinstance(value, want) or (want is int and isinstance(value, bool)):
+        err(f, f"{where}: {key} must be {spec['type']}, got {value!r}")
+    elif "enum" in spec and value not in spec["enum"]:
+        err(f, f"{where}: {key} must be one of {spec['enum']}, got {value!r}")
+for c in auto.get("cases", []):
+    for i, e in enumerate(c.get("expectedEvents", [])):
+        where = f"case {c['name']!r} event {i + 1}"
+        r = reserved.get(e["event_type"])
+        if r is None:
+            err(f, f"{where}: {e['event_type']!r} is not a reserved automatic event"); continue
+        props = e["properties"]
+        allowed = {**common, **r["properties"]}
+        for key, value in props.items():
+            if key not in allowed: err(f, f"{where}: {key!r} is not a property of {e['event_type']}")
+            else: check_value(where, key, allowed[key], value)
+        for key, spec in allowed.items():
+            if spec.get("required") and key not in props:
+                err(f, f"{where}: {e['event_type']} must carry {key!r}")
+        if "timezone" in props and "timezone_offset_minutes" in props:
+            err(f, f"{where}: timezone_offset_minutes is only a fallback; never send it with timezone")
 
 # ---------------------------------------------------------------- 4. connector fixtures
 LAUNCH = {"supabase","clerk","auth0","stripe","shopify","woocommerce",

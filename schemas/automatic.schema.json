@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/automatic.schema.json",
+  "title": "Whisperr automatic-event catalogue and conformance cases",
+  "type": "object",
+  "required": ["version", "commonProperties", "reserved", "cases"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1 },
+    "description": { "type": "string" },
+    "commonProperties": {
+      "description": "Flat properties every automatic event carries when the runtime can supply them. No value, no key.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/property_name" },
+      "additionalProperties": { "$ref": "#/$defs/property_spec" }
+    },
+    "reserved": {
+      "description": "The reserved automatic event names. The server accepts each one for every app without registration.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/reserved_event" }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "event_type": { "type": "string", "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$" },
+    "property_name": { "type": "string", "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$" },
+    "property_spec": {
+      "type": "object",
+      "required": ["type", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["string", "integer", "boolean"] },
+        "enum": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "required": { "type": "boolean" },
+        "placeholder": {
+          "description": "A value the harness cannot control. Expected events carry this token, and the harness substitutes its SDK's own value.",
+          "type": "string",
+          "pattern": "^\\$[a-z_]+$"
+        },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    },
+    "reserved_event": {
+      "type": "object",
+      "required": ["name", "trigger", "automatic", "countsAsActivity", "properties"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/event_type" },
+        "trigger": { "type": "string", "minLength": 1 },
+        "automatic": {
+          "description": "always: the SDK sends it on its own. framework: automatic only where the framework makes it cheap, otherwise a manual API. manual: the app calls an SDK method.",
+          "enum": ["always", "framework", "manual"]
+        },
+        "countsAsActivity": {
+          "description": "true when the event means the user did something in the app. The server counts only these as user activity.",
+          "type": "boolean"
+        },
+        "properties": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/property_name" },
+          "additionalProperties": { "$ref": "#/$defs/property_spec" }
+        }
+      }
+    },
+    "device": {
+      "description": "What the harness makes the platform report. A missing key means the runtime cannot supply that value. platform, os_name, sdk_name and sdk_version are fixed by the SDK under test and appear as placeholders instead.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "osVersion": { "type": "string", "minLength": 1 },
+        "locale": { "type": "string", "minLength": 1 },
+        "timezone": { "type": "string", "minLength": 1 },
+        "timezoneOffsetMinutes": { "type": "integer", "minimum": -720, "maximum": 840 }
+      },
+      "not": { "required": ["timezone", "timezoneOffsetMinutes"] }
+    },
+    "case": {
+      "type": "object",
+      "required": ["name", "device", "steps", "expectedEvents"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "storage": {
+          "description": "empty (default): a fresh install. legacy_sdk_state: storage holds state an older SDK wrote (a stored user, no stored app version).",
+          "enum": ["empty", "legacy_sdk_state"]
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "automaticEvents": { "type": "boolean" }
+          }
+        },
+        "device": { "$ref": "#/$defs/device" },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/step" }
+        },
+        "expectedEvents": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/expected_event" }
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "launch": {
+          "description": "The process starts with this app version installed, the harness builds the client on the case storage, identifies user_1, and the app comes to the foreground (a cold start).",
+          "type": "object",
+          "required": ["appVersion", "appBuild"],
+          "additionalProperties": false,
+          "properties": {
+            "appVersion": { "type": "string", "minLength": 1 },
+            "appBuild": { "type": "string", "minLength": 1 }
+          }
+        },
+        "background": {
+          "description": "The harness clock moves forward afterMs, then the app goes to the background.",
+          "$ref": "#/$defs/after"
+        },
+        "foreground": {
+          "description": "The harness clock moves forward afterMs, then the app comes back to the foreground in the same process (a warm start).",
+          "$ref": "#/$defs/after"
+        },
+        "terminate": {
+          "description": "The process ends with no further lifecycle signal. Storage survives.",
+          "const": true
+        },
+        "screen": {
+          "description": "The app calls the SDK's manual screen API with this name.",
+          "type": "string",
+          "minLength": 1
+        },
+        "pushOpened": {
+          "description": "The user opens a notification with this data payload, and the app hands it to the SDK's push-open API.",
+          "type": "object"
+        }
+      }
+    },
+    "after": {
+      "type": "object",
+      "required": ["afterMs"],
+      "additionalProperties": false,
+      "properties": {
+        "afterMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "expected_event": {
+      "description": "An event as serialized, minus identity fields, occurred_at, and context (context must still carry $message_id, as wire.json pins).",
+      "type": "object",
+      "required": ["event_type", "properties"],
+      "additionalProperties": false,
+      "properties": {
+        "event_type": { "$ref": "#/$defs/event_type" },
+        "properties": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/property_name" },
+          "additionalProperties": { "type": ["string", "integer", "boolean"] }
+        }
+      }
+    }
+  }
+}
