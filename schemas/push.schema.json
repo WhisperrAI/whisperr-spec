@@ -10,12 +10,47 @@
     "version": { "type": "integer", "minimum": 1 },
     "description": { "type": "string" },
     "cases": {
+      "description": "Flows every push-capable SDK runs. Steps use only the original string form of setPushToken, so SDKs built before token kinds keep parsing this array.",
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/case" }
+    },
+    "kindCases": {
+      "description": "Flows for SDKs that send the optional token kind, platform and push_env. An SDK that does not send them skips this array.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/kindCase" }
+    },
+    "kindInference": {
+      "description": "Server rule for a push channel that arrives without kind. Server implementations test against this table; SDKs ignore it.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/kindInferenceCase" }
     }
   },
   "$defs": {
+    "pushKind": {
+      "description": "Token type. fcm = FCM registration token; apns = raw APNs device token (lowercase hex); expo = Expo push token; onesignal_sub = OneSignal subscription id.",
+      "enum": ["fcm", "apns", "expo", "onesignal_sub"]
+    },
+    "pushPlatform": { "enum": ["ios", "android", "web"] },
+    "pushEnv": {
+      "description": "APNs environment of the token. A debug build gets sandbox tokens.",
+      "enum": ["production", "sandbox"]
+    },
+    "pushChannel": {
+      "description": "One push entry of identify channels[] on the wire. kind, platform and push_env are optional; send them only when known.",
+      "type": "object",
+      "required": ["channel", "address"],
+      "additionalProperties": false,
+      "properties": {
+        "channel": { "const": "push" },
+        "address": { "type": "string", "minLength": 1 },
+        "opted_in": { "type": "boolean" },
+        "verified": { "type": "boolean" },
+        "kind": { "$ref": "#/$defs/pushKind" },
+        "platform": { "$ref": "#/$defs/pushPlatform" },
+        "push_env": { "$ref": "#/$defs/pushEnv" }
+      }
+    },
     "case": {
       "type": "object",
       "required": ["name", "steps", "expectedBodies"],
@@ -39,19 +74,87 @@
       "maxProperties": 1,
       "additionalProperties": false,
       "properties": {
-        "identify": {
-          "type": "object",
-          "required": ["externalUserId"],
-          "additionalProperties": false,
-          "properties": {
-            "externalUserId": { "type": "string", "minLength": 1 },
-            "traits": { "type": "object" },
-            "pushToken": { "type": "string" }
-          }
-        },
+        "identify": { "$ref": "#/$defs/identifyStep" },
         "setPushToken": { "type": "string" },
         "restart": { "const": true },
         "reset": { "const": true }
+      }
+    },
+    "identifyStep": {
+      "type": "object",
+      "required": ["externalUserId"],
+      "additionalProperties": false,
+      "properties": {
+        "externalUserId": { "type": "string", "minLength": 1 },
+        "traits": { "type": "object" },
+        "pushToken": { "type": "string" }
+      }
+    },
+    "kindCase": {
+      "type": "object",
+      "required": ["name", "steps", "expectedBodies"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/kindStep" }
+        },
+        "expectedBodies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/identifyBody" }
+        }
+      }
+    },
+    "kindStep": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "identify": { "$ref": "#/$defs/identifyStep" },
+        "setPushToken": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["token"],
+              "additionalProperties": false,
+              "properties": {
+                "token": { "type": "string" },
+                "kind": { "$ref": "#/$defs/pushKind" },
+                "platform": { "$ref": "#/$defs/pushPlatform" },
+                "pushEnv": { "$ref": "#/$defs/pushEnv" }
+              }
+            }
+          ]
+        },
+        "restart": { "const": true },
+        "reset": { "const": true }
+      }
+    },
+    "identifyBody": {
+      "type": "object",
+      "required": ["external_user_id"],
+      "additionalProperties": false,
+      "properties": {
+        "external_user_id": { "type": "string", "minLength": 1 },
+        "traits": { "type": "object" },
+        "channels": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pushChannel" }
+        }
+      }
+    },
+    "kindInferenceCase": {
+      "type": "object",
+      "required": ["name", "address", "expectedKind"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "address": { "type": "string", "minLength": 1 },
+        "expectedKind": { "$ref": "#/$defs/pushKind" }
       }
     }
   }

@@ -23,6 +23,9 @@ for (const [name, file, mutate] of [
   ['unknown local reference', 'conformance/connectors/supabase.json', d => { d.$schema = '../../schemas/not-present.json'; }],
   ['unknown remote reference', 'schemas/connector-fixture.schema.json', d => { d.properties.manifest.$ref = 'https://example.invalid/missing.json'; }],
   ['unreferenced invalid regex', 'schemas/relay.schema.json', d => { d.$defs.payload.propertyNames.not.pattern = '(?i)email'; }],
+  ['object setPushToken in legacy push cases', 'conformance/push.json', d => { d.cases[0].steps[1] = { setPushToken: { token: 'fcm_tok_a', kind: 'fcm' } }; }],
+  ['unknown push token kind', 'conformance/push.json', d => { d.kindCases[0].steps[1].setPushToken.kind = 'hms'; }],
+  ['unknown push_env on the wire', 'conformance/push.json', d => { d.kindCases[0].expectedBodies[1].channels[0].push_env = 'debug'; }],
 ]) {
   test(`validator rejects ${name}`, () => {
     const temp = mkdtempSync(join(tmpdir(), 'whisperr-schema-'));
@@ -53,4 +56,39 @@ test('relay address guard uses portable case-insensitive spelling without reject
     }
   }
   for (const key of Object.keys(payload)) assert.equal(guard.test(key), false);
+});
+
+// The server rule for a push channel that arrives without kind (SPEC.md,
+// "Token kind"). Kept here so the table in push.json and the prose agree.
+function inferPushKind(address) {
+  if (/^Expo(nent)?PushToken\[.+\]$/u.test(address)) return 'expo';
+  if (/^[0-9a-fA-F]{64}$/u.test(address)) return 'apns';
+  return 'fcm';
+}
+
+test('push kind inference table follows the documented rule', () => {
+  const push = JSON.parse(readFileSync(join(root, 'conformance/push.json'), 'utf8'));
+  assert.ok(push.kindInference.length > 0);
+  const seen = new Set();
+  for (const c of push.kindInference) {
+    assert.equal(inferPushKind(c.address), c.expectedKind, c.name);
+    seen.add(c.expectedKind);
+  }
+  for (const kind of ['fcm', 'apns', 'expo']) assert.ok(seen.has(kind), `no inference case yields ${kind}`);
+  // Inference never yields onesignal_sub: a OneSignal subscription id must be sent with an explicit kind.
+  assert.ok(!seen.has('onesignal_sub'));
+});
+
+test('legacy push cases keep the string-only setPushToken step', () => {
+  const push = JSON.parse(readFileSync(join(root, 'conformance/push.json'), 'utf8'));
+  for (const c of push.cases) {
+    for (const step of c.steps) {
+      if ('setPushToken' in step) assert.equal(typeof step.setPushToken, 'string', c.name);
+    }
+    for (const body of c.expectedBodies) {
+      for (const channel of body.channels ?? []) {
+        for (const key of ['kind', 'platform', 'push_env']) assert.ok(!(key in channel), `${c.name} pins ${key}`);
+      }
+    }
+  }
 });

@@ -53,7 +53,9 @@ SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md
 - [`conformance/push.json`](conformance/push.json) — canonical push-token
   capture flows (`setPushToken` / `identify(pushToken:)`: partial re-identify,
   rotation opt-out, dedup across restart-then-reidentify, buffer-until-identify,
-  empty-token no-op, and `reset` re-registration) for the SDKs that expose them.
+  empty-token no-op, and `reset` re-registration) for the SDKs that expose them,
+  plus optional token-kind flows (`kindCases`) and the server's kind inference
+  table (`kindInference`).
 - [`conformance/anonymous.json`](conformance/anonymous.json) — canonical
   anonymous-visitor flows (`anonymous_id` on pre-identify events, promotion on
   `identify`, rotation on `reset`) for the SDKs that implement the lane.
