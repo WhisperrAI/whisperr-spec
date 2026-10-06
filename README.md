@@ -32,8 +32,7 @@ CI runs the same checks. The validator regression suite deliberately introduces
 invalid enums, types, references, required fields, and regular expressions and
 requires them to fail. Multi-delivery scenarios use `given.inbound.sequence`.
 
-RevenueCat is explicitly deferred; its fixture remains as future work and is not
-a release blocker. The validator checks fixture structure and internal consistency,
+The validator checks fixture structure and internal consistency,
 not whether a real provider installation or runtime test has passed. Executable
 connector tests and installation evidence are separate requirements.
 

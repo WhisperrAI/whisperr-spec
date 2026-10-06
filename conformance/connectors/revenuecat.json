@@ -2,7 +2,7 @@
   "$schema": "../../schemas/connector-fixture.schema.json",
   "version": 1,
   "provider": "revenuecat",
-  "description": "RevenueCat via signed webhooks. Stable app_user_id mapping; deterministic aliases ONLY — an ambiguous alias quarantines rather than guessing.",
+  "description": "RevenueCat via webhooks with a per-connection bearer secret in the Authorization header. Stable app_user_id mapping; deterministic aliases ONLY — an ambiguous alias quarantines rather than guessing.",
   "manifest": {
     "manifest_version": "2.0.0",
     "provider": "revenuecat",
@@ -10,20 +10,15 @@
     "family": "billing",
     "environments": [
       "production",
+      "staging",
       "development"
     ],
     "auth": {
-      "mode": "signed_webhook",
+      "mode": "webhook_bearer",
       "credential_kinds": [
         "provider_secret"
       ],
-      "scopes": [
-        {
-          "scope": "webhook",
-          "required": true,
-          "why": "subscription lifecycle events"
-        }
-      ],
+      "scopes": [],
       "never_requests": [
         "api_v1_write"
       ]
@@ -41,11 +36,11 @@
     "health": {
       "signals": [
         "webhook_receipt_lag",
-        "signature_valid",
+        "authentication_valid",
         "alias_ambiguity_rate"
       ],
       "degraded_when": [
-        "signature_valid == false",
+        "authentication_valid == false",
         "webhook_receipt_lag > 15m"
       ]
     },
@@ -70,7 +65,7 @@
             "app_user_id": "user_8842",
             "event_timestamp_ms": 1788412442117
           },
-          "signature_valid": true
+          "bearer_valid": true
         },
         "state": {
           "existing_link": {
@@ -118,7 +113,7 @@
               "user_9001"
             ]
           },
-          "signature_valid": true
+          "bearer_valid": true
         }
       },
       "expect": {
@@ -147,7 +142,7 @@
             "type": "INITIAL_PURCHASE",
             "app_user_id": "$RCAnonymousID:9a10"
           },
-          "signature_valid": true
+          "bearer_valid": true
         },
         "state": {
           "existing_link": null
@@ -181,7 +176,7 @@
               }
             }
           },
-          "signature_valid": true
+          "bearer_valid": true
         }
       },
       "expect": {
@@ -198,7 +193,7 @@
             "id": "rc_evt_1",
             "type": "RENEWAL"
           },
-          "signature_valid": true,
+          "bearer_valid": true,
           "delivery_ordinal": 2
         },
         "state": {
@@ -220,12 +215,13 @@
           "event": {
             "id": "rc_evt_5"
           },
-          "signature_valid": false
+          "bearer_valid": false
         }
       },
       "expect": {
         "outcome": "rejected",
-        "rejection_code": "signature_invalid"
+        "rejection_code": "signature_invalid",
+        "notes": "The shared ingress error family is signature_invalid; RevenueCat transport verifies a bearer Authorization header, not a signature."
       }
     }
   ]

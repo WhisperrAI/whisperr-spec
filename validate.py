@@ -91,9 +91,8 @@ for c in auto.get("cases", []):
             err(f, f"{where}: timezone_offset_minutes is only a fallback; never send it with timezone")
 
 # ---------------------------------------------------------------- 4. connector fixtures
-LAUNCH = {"supabase","clerk","auth0","stripe","shopify","woocommerce",
+LAUNCH = {"supabase","clerk","auth0","stripe","revenuecat","shopify","woocommerce",
           "segment","google_analytics","mixpanel","amplitude","custom_code"}
-DEFERRED = {"revenuecat"}  # Explicit product decision; keep fixtures, do not gate launch.
 BOOL_CAPS = ("live_stream","history","catalog","delivery")
 seen = set()
 
@@ -211,7 +210,7 @@ for f, d in sorted(docs.items()):
 
 missing = LAUNCH - seen
 if missing: err("conformance/connectors", f"no fixture file for launch connector(s): {sorted(missing)}")
-extra = seen - LAUNCH - DEFERRED
+extra = seen - LAUNCH
 if extra: err("conformance/connectors", f"fixture for a non-launch connector: {sorted(extra)}")
 
 # ---------------------------------------------------------------- 5. relay payload cannot carry an address
@@ -236,4 +235,4 @@ if DEBT:
     print()
 
 ncases = sum(len(d.get("cases", [])) for f, d in docs.items() if f.startswith("conformance/connectors/"))
-print(f"spec OK — {len(docs)} documents, {len(seen & LAUNCH)} launch connectors, {len(seen & DEFERRED)} deferred, {ncases} connector cases (structural checks only)")
+print(f"spec OK — {len(docs)} documents, {len(seen & LAUNCH)} launch connectors, {ncases} connector cases (structural checks only)")
