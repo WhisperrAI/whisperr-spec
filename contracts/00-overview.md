@@ -7,8 +7,8 @@ without registration ([11](11-automatic-events.md)). rc5 added the optional anon
 pre-identify events may carry `anonymous_id`, and `identify` carrying that handle is the
 explicit promotion ([10](10-sdk-compatibility.md)). rc4 corrected provider assumptions discovered
 while building against rc3. It is not evidence of deployed callbacks, app
-approval, or production readiness. RevenueCat remains deferred by the product
-owner's explicit decision; its fixtures are retained.
+approval, or production readiness. RevenueCat is a launch connector: its webhook
+authenticates with a per-connection bearer secret (`webhook_bearer`).
 
 These contracts are the single source of truth for the Whisperr Integration Program. Every
 connector, every executor (MCP, PR agent, CLI, wizard), and every internal service is built
