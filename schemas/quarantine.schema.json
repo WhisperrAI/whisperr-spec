@@ -20,8 +20,8 @@
       "description": "derived_event_code and contact_change_requires_server_key are SDK-ingestion rejections decided after the 202 acknowledge (contracts/09)."
     },
     "suppression_code": {
-      "enum": ["test_mode", "consent_blocked", "catalog_uncertain", "expired", "intervention_paused"],
-      "description": "Intentional and NOT a failure. Counted and visible, never reported as an error."
+      "enum": ["test_mode", "consent_blocked", "catalog_uncertain", "expired", "intervention_paused", "intervention_resolved", "billing_state_changed", "messaging_paused", "audience_excluded", "recipient_not_identified", "recipient_user_limit", "live_channel_missing", "live_channel_disabled", "channel_day_cap_reached", "channel_week_cap_reached", "quiet_hours", "below_sms_priority_threshold"],
+      "description": "Intentional and NOT a failure. Counted and visible, never reported as an error. The codes after intervention_paused come from send-time checks that run just before a relay send (contracts/09)."
     },
     "entry": {
       "type": "object",

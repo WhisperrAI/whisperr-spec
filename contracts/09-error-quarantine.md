@@ -92,6 +92,21 @@ emitter, which sends a corrected request.
 | `catalog_uncertain` | offer suppressed on stale or unavailable catalog ([06](06-catalog-projection.md)) |
 | `expired` | past `expires_at` ([07](07-delivery-relay.md)) |
 | `intervention_paused` | dependent connector degraded ([08](08-coverage-health.md)) |
+| `intervention_resolved` | the user did the intervention's success action before the send |
+| `billing_state_changed` | the user's billing state left the playbook's billing rule, or the billing state or local dates that the copy was written from changed, before the send |
+| `messaging_paused` | the app's messaging is paused or not set up |
+| `audience_excluded` | the user is outside the app's messaging audience |
+| `recipient_not_identified` | the recipient is not a known user, and the app limits its audience |
+| `recipient_user_limit` | the app reached its limit of distinct recipient users |
+| `live_channel_missing` | the app has no live delivery for the channel |
+| `live_channel_disabled` | the app turned live delivery off for the channel |
+| `channel_day_cap_reached` | the user reached the channel's daily message cap |
+| `channel_week_cap_reached` | the user reached the channel's weekly message cap |
+| `quiet_hours` | the send time is inside the user's quiet hours |
+| `below_sms_priority_threshold` | the intervention's priority is below the app's SMS threshold |
+
+The codes from `intervention_resolved` down come from send-time checks. Whisperr runs them just
+before a relay send, because the user's state can change after the decision.
 
 Suppressions are **counted and visible**. "We correctly did not send this" is an outcome the
 customer can see, not an absence they have to infer. This distinction matters: a suppression dashboard
