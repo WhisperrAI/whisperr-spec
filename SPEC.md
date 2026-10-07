@@ -345,11 +345,70 @@ a restart, and is kept across `reset()`.
   last-sent pair at start (an earlier SDK version opted out locally only) sends
   the same opt-out request once and forgets the pair.
 - **Scope: this device's push channel only.** Email, SMS, and the user's other
-  devices keep their state. `optOut()` does not delete data already sent.
+  devices keep their state. `optOut()` does not delete data already sent. See
+  [Server effect of a push opt-out](#server-effect-of-a-push-opt-out).
 
 These flows are executable in
 [`conformance/push.json`](conformance/push.json). The queued, in-flight and
 older-install rules are covered by per-SDK unit tests.
+
+### Push permission and the token
+
+The app reports the OS notification permission through the SDK's permission
+API, or the SDK reads it (see
+[`push_permission_changed`](#automatic-events)). Besides the event, the report
+changes this device's push token on the server:
+
+- **`denied` opts this device's token out.** When the SDK holds a last-sent
+  pair for the current user, it sends one partial identify that opts that token
+  out, under that user:
+
+  ```json
+  {
+    "external_user_id": "user_8842",
+    "channels": [
+      { "channel": "push", "address": "<this device's token>", "opted_in": false }
+    ]
+  }
+  ```
+
+  The SDK forgets the pair and holds the token. With no last-sent pair for the
+  current user, it sends nothing. A repeated `denied` sends nothing.
+- **While the permission is `denied`, the SDK holds tokens.** A token passed
+  to `setPushToken`, or buffered before `identify()`, is held and not sent. The
+  newest token replaces a held one.
+- **`authorized` or `provisional` opts the token back in.** When the SDK holds
+  a token and knows the user, it sends one partial identify that opts the held
+  token in (`opted_in: true`, with the token fields it knows), and records the
+  pair. A rotation while denied registers only the new token: the old token was
+  already opted out.
+- **`not_determined` does not opt a held token in or out.** It ends the hold
+  for later tokens: the next `setPushToken` is sent as usual.
+- **Persistence.** The SDK stores the last reported permission. It survives a
+  restart and `reset()`, because the permission belongs to the device, not the
+  user. The held token is kept in memory only. After a restart, the app's next
+  `setPushToken` call (most apps call it on every launch) supplies it.
+- **Opt-out wins.** While opted out, a permission report sends nothing and
+  changes no token. `optOut()` drops a held token.
+- **Scope: this device's push token only**, as for `optOut()`. The opt-out
+  entry is delivered and retried like any queued op. When `optOut()` discards
+  the queue, it keeps this entry (see Opt-out above).
+
+These flows are executable in [`conformance/push.json`](conformance/push.json)
+(the `pushPermission` step).
+
+### Server effect of a push opt-out
+
+The server stores channels per `(user, channel, address)`. A push opt-out
+(from `optOut()`, a `denied` permission, or a rotation) sets only that row to
+opted out. The user's other devices, email and SMS keep their state.
+
+The server counts a user as reachable while any of the user's channels is
+opted in. When the opted-out token was the user's only opted-in channel, the
+server marks the whole user suppressed with reason `all_channels_opted_out`,
+and the engine sends nothing to that user. When a channel is opted in again
+(for example, the token after the permission returns), the server clears the
+suppression.
 
 ### Known limitations
 
@@ -458,7 +517,10 @@ Every automatic event also carries these **flat** keys in `properties`:
   SDK sends nothing and keeps the stored status unchanged. The event is the only
   record of the permission: an SDK does not also send it as an identify trait.
   An SDK whose permission API uses other names maps them to these values
-  (`granted` → `authorized`, `undetermined` → `not_determined`).
+  (`granted` → `authorized`, `undetermined` → `not_determined`). The report
+  also opts this device's push token out (`denied`) or back in (`authorized`,
+  `provisional`); see
+  [Push permission and the token](#push-permission-and-the-token).
 - **Identity is unchanged.** Automatic events follow the same rules as any
   `track()`: `external_user_id` after `identify()`; before it, the anonymous
   lane or the SDK's local pre-identify buffer. An automatic event never throws

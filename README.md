@@ -52,8 +52,9 @@ SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md
 - [`conformance/push.json`](conformance/push.json) — canonical push-token
   capture flows (`setPushToken` / `identify(pushToken:)`: partial re-identify,
   rotation opt-out, dedup across restart-then-reidentify, buffer-until-identify,
-  empty-token no-op, `reset` re-registration, and the `optOut` push opt-out) for
-  the SDKs that expose them,
+  empty-token no-op, `reset` re-registration, the `optOut` push opt-out, and the
+  push opt-out and opt-in that a `denied` or re-granted notification permission
+  causes) for the SDKs that expose them,
   plus optional token-kind flows (`kindCases`) and the server's kind inference
   table (`kindInference`).
 - [`conformance/anonymous.json`](conformance/anonymous.json) — canonical
