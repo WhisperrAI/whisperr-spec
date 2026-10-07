@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/push.schema.json",
   "version": 1,
-  "description": "Canonical push-token capture flows for SDKs exposing setPushToken (mobile SDKs). Each case runs `steps` through the SDK's public API in order — `identify` maps to identify() with the SDK-public scenario shape (an optional `pushToken` expands to an opted-in push channel), `setPushToken` maps to setPushToken(token), `restart` tears down the client and constructs a fresh instance sharing the SAME persistence/storage (simulating an app relaunch; the persisted identity and last-sent token must be restored, EVEN when the relaunch calls identify() in the same tick — restore must not be skipped just because identify() ran), `reset` maps to reset()/logout (clearing the buffered token, the current user, and the persisted last-sent pair) — then asserts that the bodies of ALL requests sent to /v1/identify across the whole case equal `expectedBodies`, in order. This pins the contract: a token set with a known user sends a partial identify (external_user_id + the push channel only); a token set before any user is buffered in memory and attached to the next identify; an empty or whitespace-only token is silently ignored (safe to call every launch even before FCM/APNs has a token); setting the same token again for the same user is a no-op, INCLUDING after a restart-then-reidentify (the last-sent (user, token) pair is persisted, so every-launch getToken() wiring never spams identify); a different token (rotation) sends a new partial identify that opts out the previously sent token (opted_in: false) and opts in the new one — whether the new token arrives via setPushToken OR via identify(pushToken:), and even when the rotation happens after a restart-then-reidentify — so stale tokens from this device are retired while other devices' tokens are untouched. reset() forgets the pair so the next login re-registers the device. NOTE: the dedupe pair is a mark of what was DELIVERED — if the carrying request is dropped (a non-retryable 4xx) or evicted from a full queue, the SDK clears the pair so the token re-registers on the next attempt (not pinned here since this harness never injects failures; see the per-SDK unit tests and SPEC.md). `kindCases` pin the optional token metadata (kind, platform, push_env): an SDK that knows them runs these cases; an SDK that does not send them skips the array, and `cases` never use the object form of setPushToken, so older SDKs keep parsing this file. In the object form, setPushToken maps to setPushToken(token, kind:, platform:, pushEnv:) (or the SDK's equivalent); each known field goes on the opted-in entry under its wire name, and an unknown field is omitted, never guessed. An opt-out entry for a rotated token carries only channel, address and opted_in. `kindInference` is the server rule for a push channel that arrives without kind; SDKs ignore it.",
+  "description": "Canonical push-token capture flows for SDKs exposing setPushToken (mobile SDKs). Each case runs `steps` through the SDK's public API in order — `identify` maps to identify() with the SDK-public scenario shape (an optional `pushToken` expands to an opted-in push channel), `setPushToken` maps to setPushToken(token), `restart` tears down the client and constructs a fresh instance sharing the SAME persistence/storage (simulating an app relaunch; the persisted identity and last-sent token must be restored, EVEN when the relaunch calls identify() in the same tick — restore must not be skipped just because identify() ran), `reset` maps to reset()/logout (clearing the buffered token, the current user, and the persisted last-sent pair) — then asserts that the bodies of ALL requests sent to /v1/identify across the whole case equal `expectedBodies`, in order. This pins the contract: a token set with a known user sends a partial identify (external_user_id + the push channel only); a token set before any user is buffered in memory and attached to the next identify; an empty or whitespace-only token is silently ignored (safe to call every launch even before FCM/APNs has a token); setting the same token again for the same user is a no-op, INCLUDING after a restart-then-reidentify (the last-sent (user, token) pair is persisted, so every-launch getToken() wiring never spams identify); a different token (rotation) sends a new partial identify that opts out the previously sent token (opted_in: false) and opts in the new one — whether the new token arrives via setPushToken OR via identify(pushToken:), and even when the rotation happens after a restart-then-reidentify — so stale tokens from this device are retired while other devices' tokens are untouched. reset() forgets the pair so the next login re-registers the device. `optOut` maps to the SDK's opt-out API and `optIn` to its opt-in API (Flutter: optOut()/optIn()). Opting out tells the server about this device only: when a user is known and the SDK holds a last-sent token for that user, it sends one partial identify that opts that token out (opted_in: false), then sends nothing until optIn(), drops a buffered token, and forgets the pair, so after optIn() the next setPushToken registers the token again. The opt-out choice and the forgotten pair survive a restart. NOTE: the dedupe pair is a mark of what was DELIVERED — if the carrying request is dropped (a non-retryable 4xx) or evicted from a full queue, the SDK clears the pair so the token re-registers on the next attempt (not pinned here since this harness never injects failures; see the per-SDK unit tests and SPEC.md). `kindCases` pin the optional token metadata (kind, platform, push_env): an SDK that knows them runs these cases; an SDK that does not send them skips the array, and `cases` never use the object form of setPushToken, so older SDKs keep parsing this file. In the object form, setPushToken maps to setPushToken(token, kind:, platform:, pushEnv:) (or the SDK's equivalent); each known field goes on the opted-in entry under its wire name, and an unknown field is omitted, never guessed. An opt-out entry for a rotated token carries only channel, address and opted_in. `kindInference` is the server rule for a push channel that arrives without kind; SDKs ignore it.",
   "cases": [
     {
       "name": "set_push_token_after_identify",
@@ -230,6 +230,84 @@
           "channels": [
             { "channel": "push", "address": "fcm_tok_a", "opted_in": false },
             { "channel": "push", "address": "fcm_tok_b", "opted_in": true }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "opt_out_opts_out_this_device_push_token_then_sends_nothing",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" },
+        { "optOut": true },
+        { "setPushToken": "fcm_tok_b" },
+        { "identify": { "externalUserId": "user_1", "traits": { "plan": "pro" } } }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": false }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "opt_out_without_a_sent_token_sends_nothing",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "optOut": true },
+        { "setPushToken": "fcm_tok_a" }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" }
+      ]
+    },
+    {
+      "name": "opt_out_drops_a_token_buffered_before_identify",
+      "steps": [
+        { "setPushToken": "fcm_tok_a" },
+        { "optOut": true },
+        { "identify": { "externalUserId": "user_1" } }
+      ],
+      "expectedBodies": []
+    },
+    {
+      "name": "opt_in_after_opt_out_and_restart_registers_the_token_again",
+      "steps": [
+        { "identify": { "externalUserId": "user_1" } },
+        { "setPushToken": "fcm_tok_a" },
+        { "optOut": true },
+        { "restart": true },
+        { "setPushToken": "fcm_tok_a" },
+        { "optIn": true },
+        { "setPushToken": "fcm_tok_a" }
+      ],
+      "expectedBodies": [
+        { "external_user_id": "user_1" },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
+          ]
+        },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": false }
+          ]
+        },
+        {
+          "external_user_id": "user_1",
+          "channels": [
+            { "channel": "push", "address": "fcm_tok_a", "opted_in": true }
           ]
         }
       ]

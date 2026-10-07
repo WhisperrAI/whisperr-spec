@@ -304,6 +304,37 @@ restart-then-`identify()` restore cases. The mark-on-delivery clearing is the
 one flow not pinned there (the push harness never injects delivery failures);
 it is covered by per-SDK unit tests.
 
+### Opt-out
+
+Mobile SDKs expose `optOut()` and `optIn()`. The choice is persisted, survives
+a restart, and is kept across `reset()`.
+
+- **While opted out the SDK queues and sends nothing.** It discards the queue
+  and any buffered push token.
+- **`optOut()` tells the server about this device.** When a user is known and
+  the SDK holds a last-sent push token for that user, it sends one partial
+  identify that opts that token out:
+
+  ```json
+  {
+    "external_user_id": "user_8842",
+    "channels": [
+      { "channel": "push", "address": "<this device's token>", "opted_in": false }
+    ]
+  }
+  ```
+
+  The SDK reads the token before it discards the queue. It delivers and
+  retries this request like any queued op, also while opted out. After it,
+  the SDK sends nothing until `optIn()`.
+- **`optOut()` forgets the last-sent pair.** After `optIn()`, the next
+  `setPushToken` registers the token again.
+- **Scope: this device's push channel only.** Email, SMS, and the user's other
+  devices keep their state. `optOut()` does not delete data already sent.
+
+These flows are executable in
+[`conformance/push.json`](conformance/push.json).
+
 ### Known limitations
 
 - **User switch without `reset()`.** If the app calls `identify(userB)` while
@@ -408,7 +439,10 @@ Every automatic event also carries these **flat** keys in `properties`:
   foreground; the off switch stops this read. The app can always report it
   through the SDK's permission API. `reset()` forgets the stored status, so the
   next user on the device gets a fresh report. While the user is opted out the
-  SDK sends nothing and keeps the stored status unchanged.
+  SDK sends nothing and keeps the stored status unchanged. The event is the only
+  record of the permission: an SDK does not also send it as an identify trait.
+  An SDK whose permission API uses other names maps them to these values
+  (`granted` → `authorized`, `undetermined` → `not_determined`).
 - **Identity is unchanged.** Automatic events follow the same rules as any
   `track()`: `external_user_id` after `identify()`; before it, the anonymous
   lane or the SDK's local pre-identify buffer. An automatic event never throws

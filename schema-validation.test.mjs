@@ -25,6 +25,8 @@ for (const [name, file, mutate] of [
   ['unknown automatic lifecycle step', 'conformance/automatic.json', d => { d.cases[0].steps.push({ sleep: true }); }],
   ['automatic device offset type', 'conformance/automatic.json', d => { d.cases[0].device.timezoneOffsetMinutes = '+02:00'; }],
   ['automatic device with zone and offset', 'conformance/automatic.json', d => { d.cases[0].device.timezoneOffsetMinutes = 120; }],
+  ['push permission status outside the reserved enum', 'conformance/automatic.json', d => { d.cases[0].steps.push({ pushPermission: 'granted' }); }],
+  ['push opt-out step that is not true', 'conformance/push.json', d => { d.cases[0].steps.push({ optOut: false }); }],
   ['automatic event name not snake_case', 'conformance/automatic.json', d => { d.reserved[0].name = 'AppInstalled'; }],
   ['unreferenced invalid regex', 'schemas/relay.schema.json', d => { d.$defs.payload.propertyNames.not.pattern = '(?i)email'; }],
   ['object setPushToken in legacy push cases', 'conformance/push.json', d => { d.cases[0].steps[1] = { setPushToken: { token: 'fcm_tok_a', kind: 'fcm' } }; }],
