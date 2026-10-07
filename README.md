@@ -52,7 +52,9 @@ SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md
 - [`conformance/push.json`](conformance/push.json) — canonical push-token
   capture flows (`setPushToken` / `identify(pushToken:)`: partial re-identify,
   rotation opt-out, dedup across restart-then-reidentify, buffer-until-identify,
-  empty-token no-op, and `reset` re-registration) for the SDKs that expose them,
+  empty-token no-op, `reset` re-registration, the `optOut` push opt-out, and the
+  push opt-out and opt-in that a `denied` or re-granted notification permission
+  causes) for the SDKs that expose them,
   plus optional token-kind flows (`kindCases`) and the server's kind inference
   table (`kindInference`).
 - [`conformance/anonymous.json`](conformance/anonymous.json) — canonical
@@ -62,8 +64,8 @@ SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md
   automatic events (`app_installed`, `app_updated`, `app_opened`,
   `app_backgrounded`, `screen_viewed`, `push_opened`,
   `push_permission_changed`) as a machine-readable
-  catalogue, plus the lifecycle flows that send them, for the SDKs that
-  implement them.
+  catalogue, plus the lifecycle and push-permission flows that send them, for
+  the SDKs that implement them.
 - [`schemas/`](schemas) — JSON Schemas for the conformance fixtures.
 
 SDK tests default to the published fixtures:

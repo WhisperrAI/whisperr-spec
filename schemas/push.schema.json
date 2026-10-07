@@ -77,7 +77,13 @@
         "identify": { "$ref": "#/$defs/identifyStep" },
         "setPushToken": { "type": "string" },
         "restart": { "const": true },
-        "reset": { "const": true }
+        "reset": { "const": true },
+        "optOut": { "description": "The app calls the SDK's opt-out API.", "const": true },
+        "optIn": { "description": "The app calls the SDK's opt-in API.", "const": true },
+        "pushPermission": {
+          "description": "The app reports this notification permission through the SDK's permission API. denied opts this device's token out and holds it; authorized or provisional opts the held token back in.",
+          "enum": ["authorized", "provisional", "denied", "not_determined"]
+        }
       }
     },
     "identifyStep": {

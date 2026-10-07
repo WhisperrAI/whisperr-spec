@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/automatic.schema.json",
   "version": 1,
-  "description": "The reserved automatic events (SPEC.md → Automatic events) and their conformance flows. `commonProperties` and `reserved` are the machine-readable catalogue: SDKs, the server, and the PR agent read the names from here. Each case runs on a harness that controls what the platform reports (`device`, and the app version and build on each `launch`), the lifecycle signals, and the SDK clock. A case starts on the storage named by `storage` (default `empty`); storage survives `terminate`. The values the harness cannot control are placeholders: `$platform` (bound to the SDK's own `platform`, and `os_name` carries the same value), `$sdk_name`, and `$sdk_version`; the harness substitutes its SDK's values and checks them against `commonProperties`. `launch` starts the process: the harness builds the client with the case `config` (automatic events on unless `config.automaticEvents` is false), calls identify('user_1') right after it, and then delivers the first foreground (a cold start). `background` and `foreground` move the harness clock forward by `afterMs` and then deliver that signal. `terminate` ends the process with no further signal. `screen` calls the SDK's manual screen API. `pushOpened` hands the notification data payload to the SDK's push-open API. The harness flushes after every step, then collects every event the case sent on /v1/events/batch and /v1/events/track, in send order, and asserts that they equal `expectedEvents`: the same `event_type` and exactly the same `properties`, after it removes identity fields, `occurred_at`, and `context` (context must still carry `$message_id`, as wire.json pins). Identify requests are not compared. An SDK whose lifecycle clock the harness cannot set checks instead that `foreground_ms` is a non-negative integer. SDKs that also implement automatic screen capture run these cases with it off. Every OTHER conformance harness (wire.json, behavior.json, push.json, anonymous.json) runs the SDK with automatic events disabled, so those fixtures see only the requests their steps cause.",
+  "description": "The reserved automatic events (SPEC.md → Automatic events) and their conformance flows. `commonProperties` and `reserved` are the machine-readable catalogue: SDKs, the server, and the PR agent read the names from here. Each case runs on a harness that controls what the platform reports (`device`, and the app version and build on each `launch`), the lifecycle signals, and the SDK clock. A case starts on the storage named by `storage` (default `empty`); storage survives `terminate`. The values the harness cannot control are placeholders: `$platform` (bound to the SDK's own `platform`, and `os_name` carries the same value), `$sdk_name`, and `$sdk_version`; the harness substitutes its SDK's values and checks them against `commonProperties`. `launch` starts the process: the harness builds the client with the case `config` (automatic events on unless `config.automaticEvents` is false), calls identify('user_1') right after it, and then delivers the first foreground (a cold start). `background` and `foreground` move the harness clock forward by `afterMs` and then deliver that signal. `terminate` ends the process with no further signal. `screen` calls the SDK's manual screen API. `pushOpened` hands the notification data payload to the SDK's push-open API. `pushPermission` reports this notification permission through the SDK's permission API; an SDK whose API names the statuses differently maps them (granted is authorized, undetermined is not_determined). The harness makes the platform permission unreadable, so only `pushPermission` steps report it. `reset` calls reset(). `optOut` and `optIn` call the SDK's opt-out and opt-in APIs. The harness flushes after every step, then collects every event the case sent on /v1/events/batch and /v1/events/track, in send order, and asserts that they equal `expectedEvents`: the same `event_type` and exactly the same `properties`, after it removes identity fields, `occurred_at`, and `context` (context must still carry `$message_id`, as wire.json pins). Identify requests are not compared. An SDK whose lifecycle clock the harness cannot set checks instead that `foreground_ms` is a non-negative integer. SDKs that also implement automatic screen capture run these cases with it off. Every OTHER conformance harness (wire.json, behavior.json, push.json, anonymous.json) runs the SDK with automatic events disabled, so those fixtures see only the requests their steps cause.",
   "commonProperties": {
     "app_version": {
       "type": "string",
@@ -1063,6 +1063,448 @@
             "platform": "$platform",
             "sdk_name": "$sdk_name",
             "sdk_version": "$sdk_version"
+          }
+        }
+      ]
+    },
+    {
+      "name": "push_permission_first_report_has_no_previous_status",
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "pushPermission": "not_determined"
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "push_permission_changed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "status": "not_determined",
+            "timezone": "Europe/Berlin"
+          }
+        }
+      ]
+    },
+    {
+      "name": "push_permission_change_carries_previous_status",
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "pushPermission": "not_determined"
+        },
+        {
+          "pushPermission": "authorized"
+        },
+        {
+          "pushPermission": "denied"
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "push_permission_changed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "status": "not_determined",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "push_permission_changed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "previous_status": "not_determined",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "status": "authorized",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "push_permission_changed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "previous_status": "authorized",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "status": "denied",
+            "timezone": "Europe/Berlin"
+          }
+        }
+      ]
+    },
+    {
+      "name": "push_permission_same_status_is_not_sent_again_even_after_relaunch",
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "pushPermission": "provisional"
+        },
+        {
+          "pushPermission": "provisional"
+        },
+        {
+          "terminate": true
+        },
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "pushPermission": "provisional"
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "push_permission_changed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "status": "provisional",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reset_forgets_the_push_permission",
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "pushPermission": "authorized"
+        },
+        {
+          "reset": true
+        },
+        {
+          "pushPermission": "authorized"
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "push_permission_changed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "status": "authorized",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "push_permission_changed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "status": "authorized",
+            "timezone": "Europe/Berlin"
+          }
+        }
+      ]
+    },
+    {
+      "name": "opted_out_sends_no_push_permission_and_keeps_the_stored_status",
+      "device": {
+        "osVersion": "18.2",
+        "locale": "de-DE",
+        "timezone": "Europe/Berlin"
+      },
+      "steps": [
+        {
+          "launch": {
+            "appVersion": "1.4.0",
+            "appBuild": "140"
+          }
+        },
+        {
+          "pushPermission": "authorized"
+        },
+        {
+          "optOut": true
+        },
+        {
+          "pushPermission": "denied"
+        },
+        {
+          "optIn": true
+        },
+        {
+          "pushPermission": "denied"
+        }
+      ],
+      "expectedEvents": [
+        {
+          "event_type": "app_installed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "app_opened",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "cold_start": true,
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "push_permission_changed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "status": "authorized",
+            "timezone": "Europe/Berlin"
+          }
+        },
+        {
+          "event_type": "push_permission_changed",
+          "properties": {
+            "app_build": "140",
+            "app_version": "1.4.0",
+            "locale": "de-DE",
+            "os_name": "$platform",
+            "os_version": "18.2",
+            "platform": "$platform",
+            "previous_status": "authorized",
+            "sdk_name": "$sdk_name",
+            "sdk_version": "$sdk_version",
+            "status": "denied",
+            "timezone": "Europe/Berlin"
           }
         }
       ]

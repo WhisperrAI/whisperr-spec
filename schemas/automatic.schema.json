@@ -146,6 +146,22 @@
         "pushOpened": {
           "description": "The user opens a notification with this data payload, and the app hands it to the SDK's push-open API.",
           "type": "object"
+        },
+        "pushPermission": {
+          "description": "The app reports this notification permission through the SDK's permission API.",
+          "enum": ["authorized", "provisional", "denied", "not_determined"]
+        },
+        "reset": {
+          "description": "The app calls reset() (logout).",
+          "const": true
+        },
+        "optOut": {
+          "description": "The app calls the SDK's opt-out API.",
+          "const": true
+        },
+        "optIn": {
+          "description": "The app calls the SDK's opt-in API.",
+          "const": true
         }
       }
     },
