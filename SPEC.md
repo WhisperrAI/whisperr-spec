@@ -236,7 +236,7 @@ fields describe the token (see [Token kind](#token-kind)).
     same-token dedup is defeated (identify spam every launch). Restoring after
     `identify()` is safe: `setPushToken` only ever opts out / dedups against a
     pair whose user matches the current user, so a pair belonging to a prior
-    user is ignored on use. Only `reset()` invalidates the pair.
+    user is ignored on use. Only `reset()` and `optOut()` invalidate the pair.
   - **Mark on delivery, not on enqueue.** The dedup pair records what was
     *delivered*. If the request carrying a token is dropped (a non-retryable
     `4xx`) or evicted from a full queue before delivery, the SDK clears the
@@ -309,11 +309,13 @@ it is covered by per-SDK unit tests.
 Mobile SDKs expose `optOut()` and `optIn()`. The choice is persisted, survives
 a restart, and is kept across `reset()`.
 
-- **While opted out the SDK queues and sends nothing.** It discards the queue
-  and any buffered push token.
-- **`optOut()` tells the server about this device.** When a user is known and
-  the SDK holds a last-sent push token for that user, it sends one partial
-  identify that opts that token out:
+- **While opted out the SDK queues and sends nothing else.** It discards the
+  queue and any buffered push token. A token passed to `setPushToken` while
+  opted out is dropped, not buffered, so `optIn()` does not send it.
+- **`optOut()` tells the server about this device.** When the SDK holds a
+  last-sent push token pair, it sends one partial identify that opts that
+  token out, under the pair's user (which is not always the current user, for
+  example after `identify(userB)` without `reset()`):
 
   ```json
   {
@@ -324,16 +326,24 @@ a restart, and is kept across `reset()`.
   }
   ```
 
-  The SDK reads the token before it discards the queue. It delivers and
-  retries this request like any queued op, also while opted out. After it,
-  the SDK sends nothing until `optIn()`.
+  The SDK reads the pair before it discards the queue. When the registration
+  was still queued, the server never saw the address; it stores the opt-out as
+  an opted-out row, which is harmless. The SDK delivers and retries this
+  request like any queued op, also while opted out and after a restart. A
+  request that was in flight when `optOut()` ran and then fails is not queued
+  again. After the opt-out request, the SDK sends nothing until `optIn()`.
 - **`optOut()` forgets the last-sent pair.** After `optIn()`, the next
-  `setPushToken` registers the token again.
+  `setPushToken` registers the token again. A second `optOut()` is a no-op, so
+  it cannot discard an opt-out request that is not delivered yet.
+- **Older installs converge.** An SDK that finds a persisted opt-out and a
+  last-sent pair at start (an earlier SDK version opted out locally only) sends
+  the same opt-out request once and forgets the pair.
 - **Scope: this device's push channel only.** Email, SMS, and the user's other
   devices keep their state. `optOut()` does not delete data already sent.
 
 These flows are executable in
-[`conformance/push.json`](conformance/push.json).
+[`conformance/push.json`](conformance/push.json). The in-flight and
+older-install rules are covered by per-SDK unit tests.
 
 ### Known limitations
 
