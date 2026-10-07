@@ -329,9 +329,10 @@ a restart, and is kept across `reset()`.
   The SDK reads the pair before it discards the queue. When the registration
   was still queued, the server never saw the address; it stores the opt-out as
   an opted-out row, which is harmless. The SDK delivers and retries this
-  request like any queued op, also while opted out and after a restart. A
-  request that was in flight when `optOut()` ran and then fails is not queued
-  again. After the opt-out request, the SDK sends nothing until `optIn()`.
+  request like any queued op, also while opted out and after a restart. When a
+  request that was in flight while `optOut()` ran then fails, the SDK keeps
+  only its push opt-out entries, as for queued requests below. After the
+  opt-out requests, the SDK sends nothing else until `optIn()`.
 - **Queued push opt-outs survive `optOut()`.** When it discards the queue, the
   SDK keeps the `opted_in: false` push entries of the queued identifies (a
   rotation, a denied permission, an earlier `optOut()` not delivered yet), each
