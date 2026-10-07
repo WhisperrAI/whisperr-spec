@@ -332,9 +332,14 @@ a restart, and is kept across `reset()`.
   request like any queued op, also while opted out and after a restart. A
   request that was in flight when `optOut()` ran and then fails is not queued
   again. After the opt-out request, the SDK sends nothing until `optIn()`.
+- **Queued push opt-outs survive `optOut()`.** When it discards the queue, the
+  SDK keeps the `opted_in: false` push entries of the queued identifies (a
+  rotation, a denied permission, an earlier `optOut()` not delivered yet), each
+  under its own user, ahead of the new opt-out request. A token retired before
+  the opt-out is still retired.
 - **`optOut()` forgets the last-sent pair.** After `optIn()`, the next
-  `setPushToken` registers the token again. A second `optOut()` is a no-op, so
-  it cannot discard an opt-out request that is not delivered yet.
+  `setPushToken` registers the token again. A second `optOut()` while opted
+  out is a no-op.
 - **Older installs converge.** An SDK that finds a persisted opt-out and a
   last-sent pair at start (an earlier SDK version opted out locally only) sends
   the same opt-out request once and forgets the pair.
@@ -342,7 +347,7 @@ a restart, and is kept across `reset()`.
   devices keep their state. `optOut()` does not delete data already sent.
 
 These flows are executable in
-[`conformance/push.json`](conformance/push.json). The in-flight and
+[`conformance/push.json`](conformance/push.json). The queued, in-flight and
 older-install rules are covered by per-SDK unit tests.
 
 ### Known limitations
