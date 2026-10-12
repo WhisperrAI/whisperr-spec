@@ -37,7 +37,7 @@
       "enum": ["production", "sandbox"]
     },
     "pushChannel": {
-      "description": "One push entry of identify channels[] on the wire. kind, platform and push_env are optional; send them only when known.",
+      "description": "One push entry of identify channels[] on the wire. kind, platform, push_env, client_app_id and provider_project are optional on the wire; send them only when known. Contract v2 SDKs always send kind and platform, push_env for every apns entry, and client_app_id / provider_project when they can read them. An opt-out entry carries only channel, address and opted_in.",
       "type": "object",
       "required": ["channel", "address"],
       "additionalProperties": false,
@@ -48,7 +48,19 @@
         "verified": { "type": "boolean" },
         "kind": { "$ref": "#/$defs/pushKind" },
         "platform": { "$ref": "#/$defs/pushPlatform" },
-        "push_env": { "$ref": "#/$defs/pushEnv" }
+        "push_env": { "$ref": "#/$defs/pushEnv" },
+        "client_app_id": {
+          "description": "Contract v2. The app that owns the token: iOS bundle id, Android package name, web origin.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "provider_project": {
+          "description": "Contract v2. The provider project the token belongs to: FCM = Firebase project id, expo = EAS project id, onesignal_sub = OneSignal app id. Not sent for apns.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
       }
     },
     "case": {

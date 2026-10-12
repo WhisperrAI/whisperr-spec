@@ -42,7 +42,7 @@ for f, d in docs.items():
 
 # ---------------------------------------------------------------- 3. SDK fixtures untouched by 2.0.0
 for f in ("conformance/wire.json", "conformance/behavior.json", "conformance/push.json", "conformance/anonymous.json",
-          "conformance/automatic.json"):
+          "conformance/automatic.json", "conformance/v2.json"):
     if f not in docs: err(f, "SDK fixture missing — 2.0.0 must not remove it")
 
 # ---------------------------------------------------------------- 3b. automatic events match their catalogue
@@ -73,7 +73,7 @@ def check_value(where, key, spec, value):
         err(f, f"{where}: {key} must be {spec['type']}, got {value!r}")
     elif "enum" in spec and value not in spec["enum"]:
         err(f, f"{where}: {key} must be one of {spec['enum']}, got {value!r}")
-for c in auto.get("cases", []):
+for c in auto.get("cases", []) + auto.get("pushEventsV2", {}).get("cases", []):
     for i, e in enumerate(c.get("expectedEvents", [])):
         where = f"case {c['name']!r} event {i + 1}"
         r = reserved.get(e["event_type"])
@@ -89,6 +89,36 @@ for c in auto.get("cases", []):
                 err(f, f"{where}: {e['event_type']} must carry {key!r}")
         if "timezone" in props and "timezone_offset_minutes" in props:
             err(f, f"{where}: timezone_offset_minutes is only a fallback; never send it with timezone")
+
+# ---------------------------------------------------------------- 3c. contract v2 sections
+# A v2 section may supersede legacy cases. Each entry must name a legacy case
+# that exists, so an SDK never skips a case by a stale or misspelled name.
+def legacy_names(fixture):
+    return {c["name"] for c in docs.get(f"conformance/{fixture}", {}).get("cases", [])}
+v2 = docs.get("conformance/v2.json", {})
+v2_sections = [("conformance/v2.json", n, sec) for n, sec in v2.get("sections", {}).items()]
+if "pushEventsV2" in auto:
+    v2_sections.append(("conformance/automatic.json", "pushEventsV2", auto["pushEventsV2"]))
+seen_names = {}
+for where, name, sec in v2_sections:
+    for ref in sec.get("supersedes", []):
+        fixture, case = ref.split(":", 1)
+        if case not in legacy_names(fixture):
+            err(where, f"section {name!r} supersedes {ref!r}, which is not a legacy case")
+    for c in sec.get("cases", []):
+        key = (where, c["name"])
+        if key in seen_names:
+            err(where, f"case {c['name']!r} appears in {seen_names[key]!r} and {name!r}")
+        seen_names[key] = name
+for name, sec in v2.get("sections", {}).items():
+    for c in sec.get("cases", []):
+        steps = c.get("steps", [])
+        uses_clock = any("advanceClock" in st for st in steps)
+        # A device step without a device block would turn detection on halfway.
+        if any("setDevice" in st for st in steps) and "device" not in c:
+            err("conformance/v2.json", f"case {c['name']!r} uses setDevice without a device block")
+        if "server" in sec.get("appliesTo", []) and ("device" in c or uses_clock):
+            err("conformance/v2.json", f"case {c['name']!r}: server cases have no device and no clock")
 
 # ---------------------------------------------------------------- 4. connector fixtures
 LAUNCH = {"supabase","clerk","auth0","stripe","revenuecat","shopify","woocommerce",

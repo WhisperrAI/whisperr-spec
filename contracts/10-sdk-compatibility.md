@@ -70,14 +70,28 @@ Nothing below is required. An SDK that implements none of it stays fully conform
   unaffected.
 
 - The reserved automatic events (`app_installed`, `app_updated`, `app_opened`,
-  `app_backgrounded`, `screen_viewed`, `push_opened`, `push_permission_changed`) — ordinary track events an SDK sends on
+  `app_backgrounded`, `screen_viewed`, `push_opened`, `push_permission_changed`, `push_received`) — ordinary track events an SDK sends on
   its own ([`SPEC.md`](../SPEC.md) → Automatic events; executable in
   `conformance/automatic.json`; server meaning in [11](11-automatic-events.md)). An SDK that
   sends none of them stays conformant, and older SDK releases are unaffected.
 
+- **SDK contract v2** ([`SPEC.md`](../SPEC.md) → Contract v2 conformance; executable in
+  `conformance/v2.json` and `automatic.json` → `pushEventsV2`): the restore identify at start,
+  the reserved trait `app_language`, the anonymous identify (`anonymous_id` without
+  `external_user_id`; traits and push channels only), the push channel fields `client_app_id`
+  and `provider_project`, the 7-day push re-registration, the version keys in `context`, and
+  `push_received`. Each feature is an opt-in section; an SDK that implements none of it stays
+  conformant to v1.
+
 The first two are `context` keys, and `context` is already free-form in v1; `anonymous_id` is an
 optional top-level field the server accepts alongside `external_user_id` — so adding any of them
 is a *minor* version bump, not a breaking one.
+
+Contract v2 is also additive for the server: v1 bodies keep their meaning. But a server older than
+v2 rejects an anonymous identify (`external_user_id` missing) and the unknown fields
+`client_app_id` / `provider_project` with `400`. **Release order:** this spec, then the server,
+then SDK releases. No SDK may release a v2 identify shape before the server that accepts it is
+live.
 
 ## Breaking-change policy
 
@@ -88,7 +102,8 @@ is retired. No SDK is ever broken by a server deploy.
 
 ## Invariants
 
-1. `wire.json`, `behavior.json`, and `push.json` pass unchanged against a 2.0.0 server.
+1. `wire.json`, `behavior.json`, and `push.json` pass unchanged against a 2.0.0 server. A v2 SDK
+   still passes every legacy case that no v2 section it runs lists in `supersedes`.
 2. No SDK release is required for the launch.
 3. A v1 `identify` produces `customer_declared` consent assertions, never inferred ones.
 4. A v1 event with no `$mode` is `live`.

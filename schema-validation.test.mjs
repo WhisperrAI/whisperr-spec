@@ -11,8 +11,8 @@ const root = dirname(fileURLToPath(import.meta.url));
 test('all committed schemas compile and fixtures structurally conform', () => {
   const result = validateSchemas(root);
   assert.deepEqual(result.errors, []);
-  assert.equal(result.schemaCount, 15);
-  assert.equal(result.fixtureCount, 17);
+  assert.equal(result.schemaCount, 16);
+  assert.equal(result.fixtureCount, 18);
 });
 
 for (const [name, file, mutate] of [
@@ -33,6 +33,13 @@ for (const [name, file, mutate] of [
   ['object setPushToken in legacy push cases', 'conformance/push.json', d => { d.cases[0].steps[1] = { setPushToken: { token: 'fcm_tok_a', kind: 'fcm' } }; }],
   ['unknown push token kind', 'conformance/push.json', d => { d.kindCases[0].steps[1].setPushToken.kind = 'hms'; }],
   ['unknown push_env on the wire', 'conformance/push.json', d => { d.kindCases[0].expectedBodies[1].channels[0].push_env = 'debug'; }],
+  ['unknown v2 step', 'conformance/v2.json', d => { d.sections.restoreIdentify.cases[0].steps.push({ sleep: true }); }],
+  ['missing v2 section', 'conformance/v2.json', d => { delete d.sections.appLanguage; }],
+  ['v2 clock step with a fractional hour', 'conformance/v2.json', d => { d.sections.restoreIdentify.cases[0].steps[1] = { advanceClock: { hours: 0.5 } }; }],
+  ['v2 supersedes entry without a fixture file', 'conformance/v2.json', d => { d.sections.anonymousPush.supersedes.push('set_push_token_before_identify_buffers'); }],
+  ['v2 context with a literal platform', 'conformance/v2.json', d => { d.sections.versionContext.cases[0].expectedRequests[1].events[0].context.platform = 'ios'; }],
+  ['push_received source outside the enum', 'conformance/automatic.json', d => { d.pushEventsV2.cases[0].steps[1].receivePush.source = 'background'; }],
+  ['legacy pushOpened step in v2 automatic cases', 'conformance/automatic.json', d => { d.pushEventsV2.cases[0].steps.push({ pushOpened: { whisperr_message_id: 'm' } }); }],
 ]) {
   test(`validator rejects ${name}`, () => {
     const temp = mkdtempSync(join(tmpdir(), 'whisperr-schema-'));
@@ -97,5 +104,123 @@ test('legacy push cases keep the string-only setPushToken step', () => {
         for (const key of ['kind', 'platform', 'push_env']) assert.ok(!(key in channel), `${c.name} pins ${key}`);
       }
     }
+  }
+});
+
+// Contract v2: the expected requests in v2.json are real wire bodies once the
+// harness placeholders are replaced, so a fixture cannot pin a body the server
+// would reject (for example an email channel on an anonymous identify).
+function wireValidators() {
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  for (const name of ['push.schema.json', 'wire.schema.json']) ajv.addSchema(JSON.parse(readFileSync(join(root, 'schemas', name), 'utf8')));
+  const base = 'https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/wire.schema.json#/$defs/';
+  return { ajv, identify: ajv.getSchema(`${base}identify_body`), event: ajv.getSchema(`${base}event`), billing: ajv.getSchema(`${base}billing_event`) };
+}
+const PLACEHOLDERS = { $platform: 'ios', $sdk_name: 'whisperr-swift', $sdk_version: '2.0.0' };
+function substitute(value) {
+  if (typeof value === 'string') {
+    if (value in PLACEHOLDERS) return PLACEHOLDERS[value];
+    if (/^\$anon_[a-z0-9]+$/u.test(value)) return `3f2c9a1e-${value.slice(6).padEnd(4, '0')}-4b1d-9e2f-7a6b5c4d3e2f`;
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(substitute);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, substitute(v)]));
+  return value;
+}
+
+test('v2 expected requests are valid wire bodies after placeholder substitution', () => {
+  const v2 = JSON.parse(readFileSync(join(root, 'conformance/v2.json'), 'utf8'));
+  const { ajv, identify, event } = wireValidators();
+  let bodies = 0;
+  for (const [section, { cases }] of Object.entries(v2.sections)) {
+    for (const c of cases) {
+      for (const request of c.expectedRequests) {
+        if (request.endpoint === '/v1/identify') {
+          bodies++;
+          assert.ok(identify(substitute(request.body)), `${section}/${c.name}: ${ajv.errorsText(identify.errors)}`);
+        } else {
+          for (const e of request.events) {
+            const sent = substitute({ ...e, occurred_at: '2026-10-12T12:00:00.000Z', context: { $message_id: 'm1', ...(e.context ?? {}) } });
+            assert.ok(event(sent), `${section}/${c.name}: ${ajv.errorsText(event.errors)}`);
+          }
+        }
+      }
+    }
+  }
+  assert.ok(bodies > 0);
+});
+
+test('v2 expected bodies never put locale in context and anonymous identifies carry only traits and push', () => {
+  const v2 = JSON.parse(readFileSync(join(root, 'conformance/v2.json'), 'utf8'));
+  for (const { cases } of Object.values(v2.sections)) {
+    for (const c of cases) {
+      for (const request of c.expectedRequests) {
+        for (const e of request.events ?? []) assert.ok(!('locale' in (e.context ?? {})), c.name);
+        const body = request.body;
+        if (body && !('external_user_id' in body)) {
+          assert.deepEqual(Object.keys(body).filter(k => !['anonymous_id', 'traits', 'channels'].includes(k)), [], c.name);
+          for (const ch of body.channels ?? []) assert.equal(ch.channel, 'push', c.name);
+        }
+      }
+    }
+  }
+});
+
+test('the wire identify schema rejects what an anonymous identify may not carry', () => {
+  const { identify } = wireValidators();
+  const anon = { anonymous_id: '3f2c9a1e-0000-4b1d-9e2f-7a6b5c4d3e2f' };
+  assert.ok(identify({ ...anon, traits: { app_language: 'de' } }));
+  assert.ok(identify({ ...anon, channels: [{ channel: 'push', address: 'fcm_tok_a', opted_in: true, client_app_id: 'com.example.app', provider_project: 'example-project' }] }));
+  assert.equal(identify({ ...anon, channels: [{ channel: 'email', address: 'ada@example.com', opted_in: true }] }), false);
+  assert.equal(identify({ ...anon, channels: [{ channel: 'sms', address: '+15551234567' }] }), false);
+  assert.equal(identify({ ...anon, traits: {}, preferred_channel: 'push' }), false);
+  assert.equal(identify({ traits: { plan: 'pro' } }), false, 'neither external_user_id nor anonymous_id');
+  assert.equal(identify({ ...anon, traits: { app_language: 'pt_BR' } }), false, 'the SDK sends app_language with a hyphen');
+  assert.ok(identify({ external_user_id: 'user_1', channels: [{ channel: 'email', address: 'ada@example.com' }] }));
+});
+
+test('billing fallback names follow the playbook engine spec 3.8', () => {
+  const { billing } = wireValidators();
+  const money = { plan_id: 'pro_monthly', price: 9.99, currency: 'EUR', transaction_id: 't_1', store: 'app_store' };
+  const ok = [
+    { event_type: 'trial_started', properties: { ...money, trial_length_days: 7, trial_ends_at: '2026-10-19T12:00:00Z', plan_period: 'P1M' } },
+    { event_type: 'trial_converted', properties: { plan_period: 'P1Y', current_period_ends_at: '2027-10-19T12:00:00.000Z' } },
+    { event_type: 'trial_auto_renew_disabled', properties: { trial_ends_at: '2026-10-19T12:00:00+04:00', store_cancel_reason: 'unsubscribe' } },
+    { event_type: 'membership_started', properties: { ...money, plan_period: 'P1M', is_resubscribe: false, is_first_ever: true, access_source: 'self_subscription', entitlements: ['pro'], current_period_ends_at: '2026-11-12T12:00:00Z' } },
+    { event_type: 'renewal_succeeded', properties: { ...money, paid_periods_count: 3, current_period_ends_at: '2026-11-12T12:00:00Z' } },
+    { event_type: 'auto_renew_disabled', properties: { access_ends_at: '2026-11-12T12:00:00Z', store_cancel_reason: 'price_increase' } },
+    { event_type: 'auto_renew_enabled', properties: {} },
+    { event_type: 'membership_ended', properties: { end_reason: 'refund', plan_period: 'P1M', paid_periods_count: 2 } },
+    { event_type: 'billing_issue_started', properties: { has_access: true, grace_ends_at: '2026-10-28T12:00:00Z' } },
+    { event_type: 'billing_recovered', properties: { ...money } },
+    { event_type: 'refund_granted', properties: { ...money } },
+  ];
+  for (const event of ok) assert.ok(billing(event), `${event.event_type}: ${JSON.stringify(billing.errors)}`);
+  const bad = [
+    ['dropped name', { event_type: 'subscription_renewed', properties: {} }],
+    ['dropped name', { event_type: 'payment_failed', properties: {} }],
+    ['renamed product_id', { event_type: 'renewal_succeeded', properties: { product_id: 'pro_monthly' } }],
+    ['renamed period', { event_type: 'membership_ended', properties: { period: 'P1M' } }],
+    ['prop of another event', { event_type: 'trial_started', properties: { end_reason: 'voluntary' } }],
+    ['store_cancel_reason outside the list', { event_type: 'auto_renew_disabled', properties: { store_cancel_reason: 'too_expensive' } }],
+    ['end_reason outside the list', { event_type: 'membership_ended', properties: { end_reason: 'cancelled' } }],
+    ['access_source outside the list', { event_type: 'membership_started', properties: { access_source: 'gift' } }],
+    ['lower-case currency', { event_type: 'refund_granted', properties: { currency: 'eur' } }],
+    ['price as a string', { event_type: 'refund_granted', properties: { price: '9.99' } }],
+    ['empty plan_period', { event_type: 'trial_converted', properties: { plan_period: 'P' } }],
+    ['timestamp without a zone', { event_type: 'renewal_succeeded', properties: { current_period_ends_at: '2026-11-12T12:00:00' } }],
+  ];
+  for (const [why, event] of bad) assert.equal(billing(event), false, why);
+});
+
+test('every superseded legacy case exists', () => {
+  const load = name => JSON.parse(readFileSync(join(root, 'conformance', name), 'utf8'));
+  const v2 = load('v2.json');
+  const automatic = load('automatic.json');
+  const refs = [...Object.values(v2.sections).flatMap(s => s.supersedes), ...automatic.pushEventsV2.supersedes];
+  assert.ok(refs.length > 0);
+  for (const ref of refs) {
+    const [file, name] = ref.split(':');
+    assert.ok(load(file).cases.some(c => c.name === name), ref);
   }
 });

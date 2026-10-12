@@ -3,7 +3,7 @@
 The single source of truth for the Whisperr integration contracts and for SDK ingestion
 behavior.
 
-## Integration contracts — `2.0.0-rc6`
+## Integration contracts — `2.0.0-rc7`
 
 [`contracts/`](contracts) holds the contracts the Whisperr Integration Program is built
 against: the canonical event envelope, source connection manifests, identity authority modes,
@@ -39,7 +39,7 @@ connector tests and installation evidence are separate requirements.
 **2.0.0 requires no SDK release.** The v1 wire contract below is unchanged and still gates every
 SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md).
 
-## SDK ingestion contract — v1
+## SDK ingestion contract — v1, with opt-in v2
 
 - [`SPEC.md`](SPEC.md) — the human-readable contract: endpoints, payload shapes,
   auth, idempotency, retry/drop rules.
@@ -66,7 +66,16 @@ SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md
   `push_permission_changed`) as a machine-readable
   catalogue, plus the lifecycle and push-permission flows that send them, for
   the SDKs that implement them.
-- [`schemas/`](schemas) — JSON Schemas for the conformance fixtures.
+- [`conformance/v2.json`](conformance/v2.json) — **SDK contract v2** flows in
+  opt-in sections: `restoreIdentify`, `appLanguage`, `anonymousPush`,
+  `pushRegistration`, `versionContext`, `serverVersionContext`. The v2 push
+  events (`push_received`, `push_opened` `action_id` / `cold_start`) are in
+  `automatic.json` → `pushEventsV2`. A harness runs the sections its SDK
+  implements and skips the legacy cases each section lists in `supersedes`.
+  See [`SPEC.md`](SPEC.md) → Contract v2 conformance.
+- [`schemas/`](schemas) — JSON Schemas for the conformance fixtures, plus the
+  wire shapes in `schemas/wire.schema.json` (`identify_body`, `event`,
+  `event_context`, `billing_event`).
 
 SDK tests default to the published fixtures:
 
@@ -74,8 +83,9 @@ SDK tests default to the published fixtures:
 - `https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/conformance/behavior.json`
 
 For local development, set `WHISPERR_SPEC_PATH=/path/to/conformance/wire.json`.
-Behavior, push, and anonymous tests load `behavior.json`, `push.json`, and
-`anonymous.json` from the same directory. Set
+Behavior, push, anonymous, and v2 tests load `behavior.json`, `push.json`,
+`anonymous.json`, and `v2.json` from the same directory
+(`WHISPERR_V2_SPEC_PATH` overrides the v2 path). Set
 `WHISPERR_BEHAVIOR_SPEC_PATH` only when you need to override that explicitly.
 
 When the contract changes: update `SPEC.md` and the fixture here first, then
