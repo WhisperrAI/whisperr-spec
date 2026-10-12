@@ -1,6 +1,10 @@
 # Whisperr integration contracts — 2.0.0
 
-Status: **`2.0.0-rc6` — implementation working baseline.** This revision reserves seven
+Status: **`2.0.0-rc7` — implementation working baseline.** This revision adds SDK contract v2
+to the SDK profile: the anonymous identify, the reserved trait `app_language`, the push channel
+fields `client_app_id` / `provider_project`, version keys in event `context`, the reserved
+automatic event `push_received`, and reserved billing fallback names ([10](10-sdk-compatibility.md),
+[`SPEC.md`](../SPEC.md)). rc6 reserved seven
 automatic SDK events (`app_installed`, `app_updated`, `app_opened`, `app_backgrounded`,
 `screen_viewed`, `push_opened`, `push_permission_changed`) that are legal for every app
 without registration ([11](11-automatic-events.md)). rc5 added the optional anonymous lane to the SDK profile:

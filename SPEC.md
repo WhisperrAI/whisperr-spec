@@ -20,6 +20,11 @@ this contract, so the fixtures pin the expected behavior:
   automatic events (install, update, open, background, screen, push open) as a
   machine-readable catalogue, and pins the flows that send them for the SDKs
   that implement them (mobile: Swift, React Native, Flutter, Kotlin).
+- [`conformance/v2.json`](conformance/v2.json) pins the **contract v2** flows
+  (restore identify at start, `app_language`, the anonymous push token lane,
+  push token fields and re-registration, version keys in `context`) in opt-in
+  sections. The v2 push events are in `automatic.json` (`pushEventsV2`). See
+  [Contract v2 conformance](#contract-v2-conformance).
 
 ## Endpoints
 
@@ -77,6 +82,38 @@ PostHog project key, not a secret.
 - `context` (object) — free-form, **must contain `$message_id`**: a per-event
   idempotency key (any stable unique string; UUID recommended) so at-least-once
   retries dedup server-side. It must be stable across retries of the same event.
+  Contract v2 SDKs also put the [version keys](#version-context) in `context`.
+
+### Version context
+
+Contract v2. The server needs the app and SDK version of every event to find
+a bad release or an old SDK. These `context` keys are **governed**:
+
+| Key | Client SDKs (mobile, web) | Server SDKs |
+|---|---|---|
+| `app_version` | User-facing app version (`CFBundleShortVersionString`, `versionName`, the configured web release) | Only when the caller configures a release version |
+| `app_build` | Build number as a string (`CFBundleVersion`, `versionCode`) | Never |
+| `platform` | OS family, as in the [common properties](#common-properties) | Never |
+| `sdk_name` | `whisperr-swift` \| `whisperr-flutter` \| `whisperr-react-native` \| `whisperr-web` | `whisperr-node` \| `whisperr-python` \| `whisperr-php` \| `whisperr-dotnet` |
+| `sdk_version` | The SDK release version | The SDK release version |
+| `locale` | **Never** | **Never** |
+
+- **Every event.** Custom `track()` events and automatic events, identified
+  or anonymous. Automatic events keep the same keys in `properties` too
+  (unchanged).
+- **No value, no key.** An SDK that cannot get a value omits the key. It
+  never sends a guess.
+- **The SDK never puts `locale` in `context`.** The server reads
+  `context.locale` as the message language of that event (see
+  [`app_language`](#app_language)). A device locale there would override the
+  language the user picked. Only a caller who passes `context.locale` on
+  purpose sets it.
+- Adding these keys is not a breaking change: `context` is free-form, and the
+  server never rejects an event for them.
+- They are environment-dependent, so the legacy fixtures never pin them (see
+  [Contract v2 conformance](#contract-v2-conformance)). The `versionContext`
+  and `serverVersionContext` sections of `v2.json` pin them with injected
+  values.
 
 ## `<identify>`
 
@@ -91,7 +128,8 @@ PostHog project key, not a secret.
 }
 ```
 
-- `external_user_id` (string, required).
+- `external_user_id` (string) — required, except in an
+  [anonymous identify](#anonymous-identify) (contract v2).
 - `anonymous_id` (string, 1–128 chars, optional) — the handle this device sent
   pre-identify events under. When present the server promotes that anonymous
   user — every event and all state attached to it — into `external_user_id`;
@@ -109,24 +147,82 @@ PostHog project key, not a secret.
   - `opted_in` (bool) — defaults to `true`.
   - `verified` (bool, optional) — omit unless set.
   - `kind` (string, optional, `push` only) — `fcm` | `apns` | `expo` |
-    `onesignal_sub`. The token type. See [Token kind](#token-kind).
+    `onesignal_sub`. The token type. See [Token fields](#token-fields).
   - `platform` (string, optional, `push` only) — `ios` | `android` | `web` |
     `macos` | `windows` | `linux`.
   - `push_env` (string, optional, `push` only) — `production` | `sandbox`. The
     APNs environment of the token.
+  - `client_app_id` (string, optional, `push` only, contract v2) — the app
+    that owns the token: iOS bundle id, Android package name, web origin.
+  - `provider_project` (string, optional, `push` only, contract v2) — the
+    provider project of the token: Firebase project id (`fcm`), EAS project
+    id (`expo`), OneSignal app id (`onesignal_sub`).
+
+  See [Token fields](#token-fields) for when SDKs send them.
 
 Convenience shortcuts in the SDK APIs (`email` / `phone` / `pushToken`) expand to
 opted-in `email` / `sms` / `push` channels respectively.
 
+The [`identify_body`](schemas/wire.schema.json) definition in
+`schemas/wire.schema.json` is the machine-readable shape of this body,
+including the anonymous identify.
+
+### Anonymous identify
+
+Contract v2. An identify body with `anonymous_id` and **no**
+`external_user_id` is an **anonymous identify**:
+
+```json
+{
+  "anonymous_id": "3f2c9a1e-…",
+  "traits": { "app_language": "de" },
+  "channels": [
+    { "channel": "push", "address": "<token>", "opted_in": true, "kind": "fcm", "platform": "android" }
+  ]
+}
+```
+
+- **Only `traits` and `push` channels.** An `email` or `sms` channel, or
+  `preferred_channel`, in an anonymous identify is a `400`. Contacts belong to
+  a known user.
+- **The server attaches the data to the anonymous user of that handle.** It
+  creates the anonymous user when the handle is new. Traits merge as for any
+  identify. Push channels upsert by `(channel, address)` under that anonymous
+  user.
+- **Promotion moves the push channels.** When an identify later carries the
+  handle as `anonymous_id` together with `external_user_id`, the server
+  promotes the anonymous user ([Anonymous visitors](#anonymous-visitors)), and
+  its push channels move to the identified user. When the identified user
+  already has a row for the same address, the identified row wins.
+- An anonymous identify never creates a link to a known user. Only an identify
+  with `external_user_id` does
+  ([`contracts/03`](contracts/03-identity-authority.md)).
+- SDKs send it for two reasons only: a push token before `identify()`
+  ([Push tokens](#push-tokens)) and `setAppLanguage` before `identify()`
+  ([`app_language`](#app_language)). SDKs never send an anonymous identify
+  without `traits` or `channels`.
+- An SDK that does not implement the anonymous event lane creates the handle
+  on first need (the first anonymous identify), persists it next to its queue,
+  and from then on puts it on every identify as `anonymous_id` until `reset()`
+  rotates it. Its pre-identify `track()` events are unchanged.
+- **Release order.** A server older than contract v2 rejects an anonymous
+  identify, `client_app_id` and `provider_project` with `400` (unknown or
+  missing fields). SDKs release contract v2 only after the server is live.
+
 ### Reserved trait keys
 
-`traits` is free-form, but two keys are **reserved**: the engine reads them to
+`traits` is free-form, but three keys are **reserved**: the engine reads them to
 decide *when* and *in which language* to reach the user.
 
 | Key | Format | Used for |
 |---|---|---|
 | `timezone` | IANA tz database name — `Europe/Berlin`, `America/Sao_Paulo` | Quiet hours and send timing. Absent → the engine evaluates them in UTC (a 3 am send for everyone outside UTC). The engine also accepts the legacy aliases `time_zone` / `tz`, checked in that order; SDKs send `timezone`. |
-| `locale` | BCP 47 language tag — `de-DE`, `pt-BR`, `zh-Hans-CN` | Message language. |
+| `locale` | BCP 47 language tag — `de-DE`, `pt-BR`, `zh-Hans-CN` | The device language. Message language fallback. |
+| `app_language` | BCP 47 language tag — `de`, `pt-BR` | Contract v2. The language the user picked **in the product**. Message language. See [`app_language`](#app_language). |
+
+**Message language (server).** The server picks the language of a message in
+this order: `traits.app_language`, then the `context.locale` of the event that
+triggered the message, then `traits.locale`. The first value present wins.
 
 - **Client SDKs populate both by default.** On every `identify()`, the web,
   React Native, Flutter, and Swift SDKs fill in the device's values
@@ -153,6 +249,102 @@ decide *when* and *in which language* to reach the user.
   conformance harnesses run with device defaults disabled, and the
   `identify_reserved_traits_passthrough` case pins only that caller-supplied
   values are sent verbatim under these key names.
+- `app_language` is not a device default. The SDK sends it only after the app
+  sets it (below).
+
+### `app_language`
+
+Contract v2. `app_language` is the language the user picked in the product.
+It is **not** the device locale: a German speaker can run a phone in English
+and pick German in the app. Format: a BCP 47 tag, for example `de` or `pt-BR`.
+
+- **Client API: `setAppLanguage(tag)`** (the name follows the SDK's style).
+  The app calls it when the user picks a language, and may call it on every
+  launch.
+  - The SDK trims surrounding white space and changes `_` to `-`
+    (`pt_BR` → `pt-BR`). It does not change the case.
+  - **Valid tag:** `^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$` after that change. An
+    invalid value (including an empty string) is ignored with a debug log. The
+    stored value does not change.
+  - The SDK **persists** the value next to its queue. It survives a restart
+    and `reset()`: it is an app setting on this device, like the notification
+    permission. When a new user picks another language, the app calls
+    `setAppLanguage` again.
+  - **The same value as the stored one sends nothing**, so a call on every
+    launch does not spam identify.
+  - **`null` clears the stored value and sends nothing.** The server keeps
+    the last value it received.
+- **What `setAppLanguage` sends.** With a current user: a partial identify
+  `{external_user_id, traits: {app_language}}`. Without a user: an
+  [anonymous identify](#anonymous-identify)
+  `{anonymous_id, traits: {app_language}}`. While opted out: nothing.
+- **Every identify carries it.** Each `identify()` call and each
+  [restore identify](#restore-identify-at-start) puts the stored value in
+  `traits.app_language`. A caller-supplied `traits.app_language` wins for that
+  call. A push-token partial identify carries no `traits`, so it does not
+  carry `app_language`.
+- **Server SDKs:** no new API. The caller passes `traits.app_language` to
+  `identify`.
+
+These flows are executable in the `appLanguage` section of
+[`conformance/v2.json`](conformance/v2.json).
+
+### Restore identify at start
+
+Contract v2. Traits that come from the device (`timezone`, `locale`) and
+`app_language` change while a user stays signed in. Most apps call
+`identify()` only at sign-in, so the server never sees the change. A client
+SDK therefore identifies the stored user again at app start.
+
+- **When.** At start (a process start on mobile, a page load on the web),
+  when the SDK has a stored user id and the user did not opt out, the SDK
+  queues one **restore identify**:
+
+  ```json
+  {
+    "external_user_id": "user_8842",
+    "anonymous_id": "3f2c9a1e-…",
+    "traits": { "timezone": "Europe/Berlin", "locale": "de-DE", "app_language": "de" }
+  }
+  ```
+
+  `anonymous_id` only when the SDK stores a handle. `traits` holds the device
+  defaults and the stored `app_language` (the **restore traits**); the key is
+  omitted when they are empty. **No `channels`.**
+- **Same queue.** It goes through the same ordered, persisted queue as every
+  other op. Offline, it waits in the queue.
+- **At most one per process start.** A return from the background is not a
+  start.
+- **The app's own `identify()` wins.** When the app calls `identify()` in the
+  same tick as construction (common: identify on session restore), the SDK
+  skips the restore identify. That call already carries the restore traits.
+  An SDK meets this rule in one of two ways: it queues the restore identify
+  only after the start tick (for example after its async storage load, or on
+  the next run-loop turn) and skips it when `identify()` ran first; or it
+  removes a restore identify that is still unsent when `identify()` is called.
+- **24-hour throttle.** The SDK keeps a persisted **restore record**
+  `{user, restore traits, delivered_at}`:
+  - after a `2xx` on an `identify()` call or a restore identify, it stores
+    the user, the restore traits it computed when it built that op, and the
+    delivery time;
+  - after a `2xx` on a `setAppLanguage` partial identify for the same user,
+    it updates only `app_language` in the stored restore traits
+    (`delivered_at` does not change).
+
+  At start, the SDK skips the restore identify when the record has the same
+  user, the restore traits are equal to the ones it would send now, and
+  `delivered_at` is less than 24 hours ago. Otherwise it sends it. `reset()`
+  and `optOut()` delete the record. The clock is the wall clock (it must
+  survive a restart).
+- **React Native** persists the user id by default (AsyncStorage when it is
+  installed). With no storage available it keeps the user in memory only and
+  logs one debug warning. It never crashes.
+- **Limit.** The SDK cannot know a user who signed in before the SDK was
+  installed. The app must call `identify()` on session restore.
+- **Server SDKs** have no stored user and never send a restore identify.
+
+These flows are executable in the `restoreIdentify` section of
+[`conformance/v2.json`](conformance/v2.json).
 
 ### Anonymous visitors
 
@@ -174,12 +366,18 @@ lifecycle:
 These flows are executable in
 [`conformance/anonymous.json`](conformance/anonymous.json).
 
+Contract v2 uses the same handle for the [anonymous identify](#anonymous-identify)
+(a push token or an app language before `identify()`). Mobile SDKs that keep
+buffering pre-identify events locally still create a handle for it, on first
+need.
+
 ### Push tokens
 
 A push token (FCM registration token, APNs device token, Expo push token) is
 just a `push` channel: the token string goes in `address`. APNs device tokens
-are sent as lowercase hex. The optional `kind`, `platform` and `push_env`
-fields describe the token (see [Token kind](#token-kind)).
+are sent as lowercase hex. The optional `kind`, `platform`, `push_env`,
+`client_app_id` and `provider_project` fields describe the token (see
+[Token fields](#token-fields)).
 
 - **Channels upsert by `(channel, address)`.** On identify, the server upserts
   each incoming channel keyed by its type *and* address. Two different push
@@ -209,10 +407,18 @@ fields describe the token (see [Token kind](#token-kind)).
 - **`setPushToken(token)`** — mobile SDKs expose this capture method:
   - With a current user: enqueue the partial identify (opting out the previous
     token, if any, as above) and flush.
-  - Before any `identify()`: buffer the token in memory; the next `identify()`
-    attaches it as an opted-in push channel, unless that call supplies its own
-    `pushToken` or an explicit push channel. The buffer is memory-only — FCM and
-    APNs re-deliver the token on every launch.
+  - Before any `identify()` — **contract v2 (anonymous push token lane):**
+    send the token now in an [anonymous identify](#anonymous-identify)
+    `{anonymous_id, channels: [push]}` (with the opt-out of the previous token
+    of the same handle, if any, as above). The token is registered from the
+    first launch, so a user who never signs in can still get a push. The next
+    `identify()` attaches the token (below), and the server moves the
+    handle's push channels to the user when it promotes the handle.
+  - Before any `identify()` — **legacy (v1):** buffer the token in memory; the
+    next `identify()` attaches it as an opted-in push channel, unless that call
+    supplies its own `pushToken` or an explicit push channel. The buffer is
+    memory-only — FCM and APNs re-deliver the token on every launch. An SDK
+    that implements the anonymous push token lane does not buffer.
   - **Empty / whitespace token:** silently ignored — no buffer, no request.
     `getToken()` can return an empty string before the device has registered,
     and `setPushToken` is documented as safe to call on every launch, so an
@@ -228,6 +434,19 @@ fields describe the token (see [Token kind](#token-kind)).
     persistence the every-launch `getToken()` wiring would re-send identify on
     each start and a post-restart rotation would strand the old token
     forever — persistence is required, not optional.
+  - **Contract v2: the pair is `(subject, token, sent_at)`.** The subject is
+    the user id, or the anonymous id for a token sent in an anonymous
+    identify. Dedup, rotation and opt-out compare against the pair of the
+    same subject. `sent_at` is the wall-clock time of the delivery (`2xx`).
+  - **Contract v2: re-registration every 7 days.** When `setPushToken` gets
+    the same token for the same subject and the pair's `sent_at` is 7 days
+    (168 hours) ago or more, the SDK sends the registration again (the same
+    body as the first one, without an opt-out entry) and stores the new
+    `sent_at`. Apps call `setPushToken` at launch, so a live token reaches the
+    server at least once a week; the server keeps `last_registered_at` and can
+    see a stale token. The SDK never re-sends a token from the stored pair
+    alone: only a token the platform just gave proves that the token is still
+    current.
   - **Restore is not conditional on `identify()`.** Apps call `identify(user)`
     in the same launch tick as construction, before the async restore resolves.
     The SDK must still restore the persisted last-sent pair; skipping the
@@ -236,7 +455,8 @@ fields describe the token (see [Token kind](#token-kind)).
     same-token dedup is defeated (identify spam every launch). Restoring after
     `identify()` is safe: `setPushToken` only ever opts out / dedups against a
     pair whose user matches the current user, so a pair belonging to a prior
-    user is ignored on use. Only `reset()` and `optOut()` invalidate the pair.
+    user is ignored on use. Only `reset()` and `optOut()` invalidate the pair
+    (in contract v2, `reset()` replaces it with the pair of the new handle).
   - **Mark on delivery, not on enqueue.** The dedup pair records what was
     *delivered*. If the request carrying a token is dropped (a non-retryable
     `4xx`) or evicted from a full queue before delivery, the SDK clears the
@@ -249,26 +469,68 @@ fields describe the token (see [Token kind](#token-kind)).
     server finds only while processing it is dead-lettered server-side and
     surfaced to the app owner; the SDK never learns of it, keeps the pair,
     and does not resend.
-  - `reset()` (logout) clears the buffered token and the last-sent pair —
-    including the persisted copy; after the next login the app calls
-    `setPushToken` again (which re-registers, since the pair was forgotten).
+  - **`reset()` (logout), legacy (v1):** clears the buffered token and the
+    last-sent pair — including the persisted copy; after the next login the
+    app calls `setPushToken` again (which re-registers, since the pair was
+    forgotten).
+  - **`reset()` (logout), contract v2: the token moves to the next visitor.**
+    The device keeps its token after a logout, so the SDK keeps it
+    registered, but never under the user who left. When the SDK holds a
+    last-sent pair, `reset()`:
+    1. sends a partial identify that opts the token out under the pair's
+       subject (`{external_user_id, channels: [{push, token, opted_in: false}]}`,
+       or the same with `anonymous_id` for an anonymous pair);
+    2. rotates `anonymous_id` (a new handle);
+    3. sends an anonymous identify that opts the token in under the new handle
+       (with the token fields it knows), and records the new pair.
+
+    With no last-sent pair (for example while the permission is `denied`), it
+    sends nothing and only rotates the handle. While opted out, it sends
+    nothing.
+
+**`identify()` attaches an anonymous token (contract v2).** When the last-sent
+pair's subject is the current anonymous handle, `identify(user)` attaches that
+token as an opted-in push channel (with the token fields it knows) in the same
+body that promotes the handle, and records the pair under the user. A token
+held while the permission is `denied` is not attached. A token registered under
+another user is not attached (see [Known limitations](#known-limitations)).
 
 `identify()` **also rotates.** When an `identify()` call carries an opted-in
 push token (via the `pushToken` shortcut or an explicit push channel) that
 differs from the last token this SDK sent for that user, it opts the previous
 token out in the same body — exactly like `setPushToken`. Passing `pushToken`
-to `identify` must not strand the earlier token opted-in.
+to `identify` must not strand the earlier token opted-in. In contract v2 the
+same applies to the token of the anonymous handle this `identify()` promotes.
 
-### Token kind
+The anonymous lane and the v2 `reset()` are executable in the `anonymousPush`
+section of [`conformance/v2.json`](conformance/v2.json). That section
+supersedes three legacy `push.json` cases (the in-memory buffer, the opt-out of
+a buffered token, and the `reset()` that forgets the token).
 
-A push entry may carry three optional fields: `kind`, `platform` and
-`push_env`. They tell the server which provider can send to the token. All
-three are optional, so an SDK built before them keeps working.
+### Token fields
 
-- **SDKs send only what they know.** Swift sends `kind: "apns"`,
-  `platform: "ios"`, and `push_env` from the build (a debug build gets
-  `sandbox` tokens). An Expo app sends `kind: "expo"`. An SDK that does not know
-  a value omits the key. It never guesses.
+A push entry may carry five optional wire fields: `kind`, `platform`,
+`push_env`, `client_app_id` and `provider_project`. They tell the server which
+provider can send to the token, and let it catch a token that belongs to
+another app or project before a send. All five are optional on the wire, so an
+SDK built before them keeps working.
+
+| Field | Contract v2 SDK rule |
+|---|---|
+| `kind` | Always send. The SDK knows the token type from its API (Swift: `apns`; an FCM token: `fcm`; Expo: `expo`; OneSignal: `onesignal_sub`). |
+| `platform` | Always send (Flutter in FCM mode adds it too). |
+| `push_env` | Always send for `kind: apns` (`production` or `sandbox`, from the build's `aps-environment`; a debug build gets `sandbox` tokens). Never for other kinds. Flutter and React Native read it through a small native helper. |
+| `client_app_id` | Send when the SDK can read it: iOS bundle id, Android package name, web origin. It lets the server pick the APNs topic and catch a wrong bundle. |
+| `provider_project` | Send when available: Firebase project id (`FirebaseApp.options.projectID`) for `fcm`, EAS project id for `expo`, OneSignal app id for `onesignal_sub`. Never for `apns`. It lets the server catch `SENDER_ID_MISMATCH` and a mix of Expo projects before a send. |
+
+- **SDKs send only what they know.** An SDK that cannot read a value omits the
+  key. It never guesses. A value the app passes explicitly to the SDK's API
+  wins over a detected one.
+- **Only on the opted-in entry.** The opt-out entry of a rotated, reset or
+  denied token carries only `channel`, `address` and `opted_in: false`.
+- **Legacy (v1) SDKs** sent only what they knew of `kind`, `platform` and
+  `push_env` (Swift: `kind: "apns"`, `platform: "ios"`, `push_env` from the
+  build; Expo: `kind: "expo"`). That stays valid.
 - **Server inference.** When `kind` is missing, the server infers it from the
   token:
   1. `ExponentPushToken[…]` or `ExpoPushToken[…]` → `expo`.
@@ -278,8 +540,8 @@ three are optional, so an SDK built before them keeps working.
   Inference never yields `onesignal_sub`. A OneSignal subscription id must be
   sent with an explicit `kind`.
 - **Storage.** An explicit `kind` replaces the stored kind. An inferred kind
-  never replaces an explicit one. `platform` and `push_env` replace the stored
-  value only when sent.
+  never replaces an explicit one. `platform`, `push_env`, `client_app_id` and
+  `provider_project` replace the stored value only when sent.
 - **Rotation.** The opt-out entry for the old token needs only `channel`,
   `address` and `opted_in: false`. The server matches it by address.
 - **Lenient.** These fields never fail a request. The server drops an unknown
@@ -293,9 +555,12 @@ three are optional, so an SDK built before them keeps working.
   explicit `kind` moves them.
 
 The [`kindInference`](conformance/push.json) table pins the inference rule.
-The `kindCases` flows pin the wire shape for SDKs that send these fields.
-SDKs that do not send them skip `kindCases`; the original `cases` never use
-them.
+The `kindCases` flows pin the wire shape for SDKs that send `kind`,
+`platform` and `push_env` explicitly. SDKs that do not send them skip
+`kindCases`; the original `cases` never use them. The `pushRegistration`
+section of [`conformance/v2.json`](conformance/v2.json) pins the contract v2
+fields (with injected values) and the 7-day re-registration (with an injected
+clock).
 
 Most of these flows are executable in
 [`conformance/push.json`](conformance/push.json) — including `reset`, the
@@ -325,6 +590,9 @@ a restart, and is kept across `reset()`.
     ]
   }
   ```
+
+  In contract v2 the pair's subject can be the anonymous handle; the opt-out
+  then carries `anonymous_id` in place of `external_user_id`.
 
   The SDK reads the pair before it discards the queue. When the registration
   was still queued, the server never saw the address; it stores the opt-out as
@@ -373,7 +641,9 @@ changes this device's push token on the server:
   ```
 
   The SDK forgets the pair and holds the token. With no last-sent pair for the
-  current user, it sends nothing. A repeated `denied` sends nothing.
+  current user, it sends nothing. A repeated `denied` sends nothing. In
+  contract v2, before `identify()` the current subject is the anonymous
+  handle: a pair under the handle is opted out under the handle.
 - **While the permission is `denied`, the SDK holds tokens.** A token passed
   to `setPushToken`, or buffered before `identify()`, is held and not sent. The
   newest token replaces a held one.
@@ -381,7 +651,10 @@ changes this device's push token on the server:
   a token and knows the user, it sends one partial identify that opts the held
   token in (`opted_in: true`, with the token fields it knows), and records the
   pair. A rotation while denied registers only the new token: the old token was
-  already opted out.
+  already opted out. In contract v2, with no user, it opts the held token in
+  with an [anonymous identify](#anonymous-identify) under the handle. A held
+  token is never attached by `identify()`; only the permission report sends
+  it.
 - **`not_determined` does not opt a held token in or out.** It ends the hold
   for later tokens: the next `setPushToken` is sent as usual.
 - **Persistence.** The SDK stores the last reported permission. It survives a
@@ -394,8 +667,15 @@ changes this device's push token on the server:
   entry is delivered and retried like any queued op. When `optOut()` discards
   the queue, it keeps this entry (see Opt-out above).
 
+- **Asking for the permission (contract v2).** Swift and React Native expose
+  `requestPushAuthorization({provisional})` (the name follows the SDK's style;
+  Flutter already has it). It shows the OS prompt (or requests provisional
+  authorization on iOS when `provisional` is true), reports the result as
+  above, and returns the status.
+
 These flows are executable in [`conformance/push.json`](conformance/push.json)
-(the `pushPermission` step).
+(the `pushPermission` step) and, for the anonymous handle, in the
+`anonymousPush` section of [`conformance/v2.json`](conformance/v2.json).
 
 ### Server effect of a push opt-out
 
@@ -434,7 +714,8 @@ format does not change.
 | `app_opened` | Every move to the foreground, including the cold start | `cold_start` (bool) | **yes** |
 | `app_backgrounded` | Every move to the background | `foreground_ms` (int) | no |
 | `screen_viewed` | The app calls the screen API; automatic only where the framework makes it cheap | `screen_name` | **yes** |
-| `push_opened` | The user opens a notification whose data carries `whisperr_message_id` | `whisperr_message_id`, `deep_link` (optional) | **yes** |
+| `push_opened` | The user opens a notification whose data carries `whisperr_message_id` | `whisperr_message_id`, `deep_link` (optional), `action_id` and `cold_start` (contract v2) | **yes** |
+| `push_received` | Contract v2. The device receives a push whose data carries `whisperr_message_id` | `whisperr_message_id`, `foreground` (bool), `source` | no |
 | `push_permission_changed` | The SDK first learns the notification permission, or learns that it changed | `status`, `previous_status` (optional) | no |
 
 The full catalogue, with types and triggers, is machine-readable in
@@ -504,6 +785,27 @@ Every automatic event also carries these **flat** keys in `properties`:
   `deep_link`, so payloads built before this key keep working. The event
   property is always `deep_link`. A rich-push image URL rides in
   `whisperr_image_url`.
+- **`push_opened` v2 properties.** `action_id` is `default` for a tap on the
+  notification body (iOS `UNNotificationDefaultActionIdentifier`, an Android
+  content intent), otherwise the identifier of the action button the user
+  tapped. `cold_start` is `true` when the open launched the app process (the
+  app reads it as the initial notification: `launchOptions`,
+  `getInitialMessage`, `getLastNotificationResponseAsync`), and `false` when
+  the app was already running.
+- **`push_received` (contract v2) records that a Whisperr push reached the
+  device.** Only for pushes whose data carries `whisperr_message_id`; a push
+  without it sends nothing. `foreground` is `true` when the app was in the
+  foreground when the push arrived. `source` names the code path that saw it:
+  `foreground` (the in-app foreground handler), `nse` (an iOS Notification
+  Service Extension), `android_service` (the Android messaging service),
+  `expo_task` (an Expo background task). **Dedupe by message id on this
+  device:** the SDK sends one `push_received` per `whisperr_message_id`, even
+  when two paths see the same push (an NSE and the foreground handler). Every
+  mobile SDK reports foreground receipt; background receipt is optional and
+  only where it is cheap. FCM notification messages in the background never
+  reach app code, so Android background receipt is unknown for them. The off
+  switch stops `push_received`. It follows the identity and opt-out rules of
+  every event.
 - **`push_permission_changed` reports the notification permission.**
   `status` is `authorized`, `provisional`, `denied`, or `not_determined`
   (iOS ephemeral App Clip permission reports as `authorized`). The SDK stores
@@ -547,8 +849,9 @@ Every automatic event also carries these **flat** keys in `properties`:
   registration supplies the label and schema; the code keeps its meaning.
 - **Activity.** Only `app_opened`, `screen_viewed`, and `push_opened` (and the
   app's own events) make a user active. `app_installed`, `app_updated`,
-  `app_backgrounded`, and `push_permission_changed` describe the app or the
-  device, not a use of the app, and never count as activity.
+  `app_backgrounded`, `push_permission_changed`, and `push_received` describe
+  the app or the device, not a use of the app, and never count as activity.
+  A push that arrives is not a return to the app.
 - **Derived events can never use these names.** They are raw events reported
   by the device.
 
@@ -557,10 +860,102 @@ These flows are executable in
 meaning is in [`contracts/11`](contracts/11-automatic-events.md).
 
 **Conformance harnesses for every other fixture** (`wire.json`,
-`behavior.json`, `push.json`, `anonymous.json`) run the SDK with automatic
-events **disabled**. Those fixtures pin exact request sequences, and an
-automatic `app_opened` would add requests their steps did not cause. Only the
-`automatic.json` harness turns them on.
+`behavior.json`, `push.json`, `anonymous.json`, `v2.json`) run the SDK with
+automatic events **disabled**. Those fixtures pin exact request sequences, and
+an automatic `app_opened` would add requests their steps did not cause. Only
+the `automatic.json` harness turns them on.
+
+## Billing fallback events
+
+Contract v2 reserves six event names for billing facts. An app that has no
+billing source connected (Stripe, RevenueCat) sends them with `track()`, from
+a client or a server SDK:
+
+| `event_type` | When |
+|---|---|
+| `trial_started` | A free trial starts |
+| `subscription_started` | A paid subscription starts (also a trial that converts) |
+| `subscription_renewed` | A subscription renews |
+| `payment_failed` | A renewal or purchase payment fails |
+| `subscription_cancelled` | The user cancels (spelled with two `l`) |
+| `purchase_completed` | A one-time purchase completes |
+
+Properties (all optional; no value, no key):
+
+| Key | Format |
+|---|---|
+| `product_id` | The store or billing product id |
+| `price` | Number in major units — `9.99`, never cents |
+| `currency` | ISO 4217, upper case — `EUR` |
+| `period` | ISO 8601 duration — `P1M`, `P1Y`, `P7D` |
+| `transaction_id` | The store or billing transaction id |
+| `store` | Where the purchase happened — `app_store`, `play_store`, `stripe` |
+
+- These are names only. They are ordinary `<event>` bodies; the wire does not
+  change. Today the server stores them only after the app registers them (the
+  MCP registers them). Acceptance without registration is a later server
+  change.
+- An app with a connected billing source does not need to send them.
+- The [`billing_event`](schemas/wire.schema.json) definition in
+  `schemas/wire.schema.json` is the machine-readable catalogue.
+
+## Contract v2 conformance
+
+Contract v2 adds the restore identify, `app_language`, the anonymous identify
+and push token lane, the push token fields and re-registration, the version
+context keys, `push_received`, and the v2 `push_opened` properties. The legacy
+fixtures keep their meaning: an SDK that implements none of v2 still passes
+them and stays conformant to v1.
+
+**Where the cases are.**
+
+| Fixture | Section | Feature | SDKs |
+|---|---|---|---|
+| `v2.json` | `restoreIdentify` | [Restore identify at start](#restore-identify-at-start) | mobile, web |
+| `v2.json` | `appLanguage` | [`app_language`](#app_language) | mobile, web |
+| `v2.json` | `anonymousPush` | [Anonymous push token lane](#push-tokens) and the v2 `reset()` | mobile |
+| `v2.json` | `pushRegistration` | [Token fields](#token-fields), 7-day re-registration | mobile |
+| `v2.json` | `versionContext` | [Version context](#version-context), client | mobile, web |
+| `v2.json` | `serverVersionContext` | [Version context](#version-context), server | server |
+| `automatic.json` | `pushEventsV2` | `push_received`, `push_opened` `action_id` / `cold_start` | mobile |
+
+**How a harness opts in.**
+
+1. Load `v2.json` from the same directory as `wire.json` (as the push,
+   anonymous and automatic suites do), or from `WHISPERR_V2_SPEC_PATH`.
+2. Run each section the SDK implements and whose `appliesTo` names its kind of
+   SDK. Sections are independent: an SDK can ship them one at a time.
+3. For each section it runs, skip the legacy cases the section lists in
+   `supersedes` (`<file>:<case name>`). Those cases pin v1 behavior that the v2
+   feature changes on purpose (for example, the in-memory token buffer). Run
+   every other legacy case unchanged.
+4. For `pushEventsV2`, run its cases on the `automatic.json` harness with the
+   two new steps (`receivePush`, `openPush`), and skip its `supersedes` cases.
+
+**Environment switch.** Every v2 harness can turn the SDK's environment
+detection on or off: device default traits (`timezone`, `locale`), the
+version context keys, and detected push token fields (`platform`,
+`push_env`, `client_app_id`, `provider_project`). The legacy harnesses run
+with it **off** (as they already do for the reserved trait defaults), so a v2
+SDK adds none of these keys there. A `v2.json` case turns it **on** with a
+`device` block and injects the values; a missing key means the runtime cannot
+supply it. `$platform`, `$sdk_name` and `$sdk_version` are placeholders for
+the SDK's own values.
+
+**Clock.** Restore identify and push re-registration use persisted
+wall-clock timestamps. `v2.json` cases move an injected clock with
+`advanceClock`. Without a clock step, a whole legacy case runs within one
+instant, so the 24-hour throttle and the 7-day re-registration never change a
+legacy expectation. (A legacy restart of a stored user within 24 hours, with
+the same restore traits, sends no restore identify.)
+
+**Anonymous handle.** On an identify body that carries `external_user_id`,
+the v2 harness ignores `anonymous_id` when the expected body does not name it,
+because an SDK may hold a handle for its anonymous event lane. A harness for
+such an SDK may apply the same rule to the legacy `push.json` cases.
+
+The full harness rules are in the `description` of `v2.json` and of
+`pushEventsV2`.
 
 ## Delivery contract
 

@@ -9,10 +9,11 @@ What the server does with the events client SDKs send on their own.
 
 A churn engine needs an activity signal it can trust. Before this contract an app had activity
 only where its developer, or a generated integration, added a `track()` call in the right place.
-Generated wiring misses events. The mobile SDKs therefore send seven reserved events by default:
+Generated wiring misses events. The mobile SDKs therefore send eight reserved events by default:
 `app_installed`, `app_updated`, `app_opened`, `app_backgrounded`, `screen_viewed`,
-`push_opened`, `push_permission_changed`. Every app gets "days since last open" on day one, and
-the engine knows which devices can still receive push.
+`push_opened`, `push_permission_changed`, and (SDK contract v2) `push_received`. Every app gets
+"days since last open" on day one, the engine knows which devices can still receive push, and it
+can tell a push that never arrived from a push that arrived and was not opened.
 
 ## Reserved names are legal without registration
 
@@ -40,12 +41,17 @@ Each reserved event declares `countsAsActivity` in the catalogue.
 
 | counts as activity | does not count |
 |---|---|
-| `app_opened`, `screen_viewed`, `push_opened` | `app_installed`, `app_updated`, `app_backgrounded`, `push_permission_changed` |
+| `app_opened`, `screen_viewed`, `push_opened` | `app_installed`, `app_updated`, `app_backgrounded`, `push_permission_changed`, `push_received` |
 
 "Activity" means the user did something in the app: it drives last-active, active days, and the
 lifecycle stages. Events that only describe the app (an install, an update, the app going to the
 background) never make a silent user active. This classification is by name. It applies the same
 way to a customer's own event with a reserved name.
+
+`push_received` records that a Whisperr push reached the device. A push that arrives is not a use
+of the app, so it never makes a user active, also when the app was in the foreground. Only
+`push_opened` is the user's action. The engine still excludes `push_opened` from the "returned"
+outcome of the message that caused it.
 
 Activity comes only from the app's own events. Provider webhooks, billing events, delivery
 receipts, and other source observations never count as activity, whatever their name.
@@ -63,7 +69,7 @@ universe as usual and not twice.
 1. A reserved automatic event from a publishable SDK key is accepted and stored as `mapped` for
    an app with an empty registry. (test)
 2. A customer registration of a reserved name keeps working unchanged. (test)
-3. `app_installed`, `app_updated`, and `app_backgrounded` never move `last_active_at` or the
-   activity counters; `app_opened` and `screen_viewed` do. (test)
+3. `app_installed`, `app_updated`, `app_backgrounded`, and `push_received` never move
+   `last_active_at` or the activity counters; `app_opened` and `screen_viewed` do. (test)
 4. A derived-event definition with a reserved name fails validation. (test)
 5. Reserved events never change the coverage `wired` / `applicable` totals. (test)

@@ -47,6 +47,12 @@ never by inference, and never retroactively across two different anonymous handl
 source that transition is `identify` carrying the handle as `anonymous_id`
 ([10](10-sdk-compatibility.md)).
 
+An **anonymous identify** (SDK contract v2: `anonymous_id` without `external_user_id`) is not a
+transition. It attaches traits and push channels to the anonymous user of that handle and links it
+to nobody. It may not carry an email or SMS channel: a contact address belongs to a known user. When
+the handle is later promoted, its push channels move with it; on the same address the identified
+user's row wins.
+
 ## The absolute prohibitions
 
 1. **No email-based merging.** Email is a channel address, not an identity. Two sources
