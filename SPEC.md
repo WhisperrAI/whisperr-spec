@@ -867,37 +867,67 @@ the `automatic.json` harness turns them on.
 
 ## Billing fallback events
 
-Contract v2 reserves six event names for billing facts. An app that has no
-billing source connected (Stripe, RevenueCat) sends them with `track()`, from
-a client or a server SDK:
+Contract v2 reserves eleven event names for membership (billing) facts. The
+names and properties come from the playbook engine spec §3.8 (membership
+slots). The HotCard backend already sends them in this form.
 
-| `event_type` | When |
-|---|---|
-| `trial_started` | A free trial starts |
-| `subscription_started` | A paid subscription starts (also a trial that converts) |
-| `subscription_renewed` | A subscription renews |
-| `payment_failed` | A renewal or purchase payment fails |
-| `subscription_cancelled` | The user cancels (spelled with two `l`) |
-| `purchase_completed` | A one-time purchase completes |
+**Sender: the app's backend, never the front end.** Per §3.8, membership facts
+come from a billing source (Stripe, RevenueCat) or from the app's backend in
+the same normalized form. An app with no billing source connected sends them
+from its backend with a server SDK `track()`. Client SDKs do not block these
+names in `track()`, but apps must not send them from the device: a client
+cannot know the store's view of the membership.
 
-Properties (all optional; no value, no key):
+| `event_type` | Meaning | Own properties |
+|---|---|---|
+| `trial_started` | A free trial starts | `trial_length_days`, `trial_ends_at`, `plan_period` |
+| `trial_converted` | The trial converts; the first paid period starts | `plan_period`, `current_period_ends_at` |
+| `trial_auto_renew_disabled` | The trial is cancelled | `trial_ends_at`, `store_cancel_reason` |
+| `membership_started` | A paid start (never a renewal or a crossgrade) | `plan_period`, `is_resubscribe`, `is_first_ever`, `access_source`, `entitlements`, `current_period_ends_at` |
+| `renewal_succeeded` | A paid period renews | `paid_periods_count`, `current_period_ends_at` |
+| `auto_renew_disabled` | Cancel pending; access continues | `access_ends_at`, `store_cancel_reason` |
+| `auto_renew_enabled` | The cancel is undone | — |
+| `membership_ended` | Access ends | `end_reason`, `plan_period`, `paid_periods_count` |
+| `billing_issue_started` | A payment failed | `has_access`, `grace_ends_at` |
+| `billing_recovered` | The payment issue is resolved | — |
+| `refund_granted` | The store granted a refund | — |
+
+**Money properties** on every one of these events, where they apply:
+`plan_id`, `price`, `currency`, `transaction_id`, `store`.
 
 | Key | Format |
 |---|---|
-| `product_id` | The store or billing product id |
+| `plan_id` | The store or billing plan (product) id |
 | `price` | Number in major units — `9.99`, never cents |
 | `currency` | ISO 4217, upper case — `EUR` |
-| `period` | ISO 8601 duration — `P1M`, `P1Y`, `P7D` |
 | `transaction_id` | The store or billing transaction id |
-| `store` | Where the purchase happened — `app_store`, `play_store`, `stripe` |
+| `store` | Free string — `app_store`, `play_store`, `stripe` |
+| `plan_period` | ISO 8601 duration of one billing period — `P1W`, `P1M`, `P3M`, `P1Y` |
+| `trial_length_days` | Integer days |
+| `trial_ends_at`, `current_period_ends_at`, `access_ends_at`, `grace_ends_at` | RFC 3339 timestamp with a zone — `2026-11-12T12:00:00Z` |
+| `is_resubscribe`, `is_first_ever`, `has_access` | Boolean |
+| `entitlements` | Array of entitlement ids |
+| `paid_periods_count` | Integer, paid periods so far |
 
+**Closed lists (§3.8).** They have different names so they cannot be mixed up:
+
+| Key | Values |
+|---|---|
+| `store_cancel_reason` (on `trial_auto_renew_disabled`, `auto_renew_disabled`) | `unsubscribe`, `billing_error`, `developer_initiated`, `price_increase`, `customer_support`, `unknown` |
+| `end_reason` (on `membership_ended`) | `voluntary`, `billing`, `price_increase`, `product_unavailable`, `developer_initiated`, `refund`, `other` |
+| `access_source` (on `membership_started`) | `self_subscription`, `lifetime`, `family_share`, `promotional`, `sponsored`, `web_other` |
+
+- **No value, no key.** Every property is optional on the wire. The engine
+  needs some of them to send for real (for example `trial_ends_at`,
+  `access_ends_at`); see the playbook.
 - These are names only. They are ordinary `<event>` bodies; the wire does not
   change. Today the server stores them only after the app registers them (the
   MCP registers them). Acceptance without registration is a later server
   change.
 - An app with a connected billing source does not need to send them.
 - The [`billing_event`](schemas/wire.schema.json) definition in
-  `schemas/wire.schema.json` is the machine-readable catalogue.
+  `schemas/wire.schema.json` is the machine-readable catalogue. It lists, per
+  name, the properties a sender produces. The server keeps unknown extra keys.
 
 ## Contract v2 conformance
 

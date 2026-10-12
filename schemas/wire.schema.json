@@ -143,25 +143,436 @@
       ]
     },
     "billing_event": {
-      "description": "Contract v2 reserved billing fallback names (SPEC.md -> Billing fallback events). The app sends them with track() when no billing source (Stripe, RevenueCat) reports them. Names only: today the server stores them after the app registers them.",
+      "description": "Contract v2 reserved billing fallback events (SPEC.md -> Billing fallback events). Names and props come from the playbook engine spec 3.8. The app's BACKEND sends them with track() when no billing source (Stripe, RevenueCat) reports them; never the front end. Every property is optional (no value, no key). Each event takes its own props plus the money props plan_id, price, currency, transaction_id, store. The server keeps unknown extra keys; this shape is what a sender produces. Names only: today the server stores them after the app registers them.",
       "type": "object",
-      "required": ["event_type", "properties"],
+      "required": [
+        "event_type",
+        "properties"
+      ],
       "properties": {
         "event_type": {
-          "enum": ["trial_started", "subscription_started", "subscription_renewed", "payment_failed", "subscription_cancelled", "purchase_completed"]
+          "enum": [
+            "trial_started",
+            "trial_converted",
+            "trial_auto_renew_disabled",
+            "membership_started",
+            "renewal_succeeded",
+            "auto_renew_disabled",
+            "auto_renew_enabled",
+            "membership_ended",
+            "billing_issue_started",
+            "billing_recovered",
+            "refund_granted"
+          ]
         },
         "properties": {
           "type": "object",
           "properties": {
-            "product_id": { "type": "string", "minLength": 1 },
-            "price": { "description": "Major units, for example 9.99.", "type": "number", "minimum": 0 },
-            "currency": { "description": "ISO 4217, upper case.", "type": "string", "pattern": "^[A-Z]{3}$" },
-            "period": { "description": "ISO 8601 duration, for example P1M.", "type": "string", "pattern": "^P(?=\\d)(?:\\d+Y)?(?:\\d+M)?(?:\\d+W)?(?:\\d+D)?$" },
-            "transaction_id": { "type": "string", "minLength": 1 },
-            "store": { "description": "Where the purchase happened, for example app_store, play_store or stripe.", "type": "string", "minLength": 1 }
+            "plan_id": {
+              "description": "The store or billing plan (product) id.",
+              "type": "string",
+              "minLength": 1
+            },
+            "price": {
+              "description": "Major units, for example 9.99. Never cents.",
+              "type": "number",
+              "minimum": 0
+            },
+            "currency": {
+              "description": "ISO 4217, upper case.",
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            },
+            "transaction_id": {
+              "description": "The store or billing transaction id.",
+              "type": "string",
+              "minLength": 1
+            },
+            "store": {
+              "description": "Where the purchase happened, for example app_store, play_store or stripe.",
+              "type": "string",
+              "minLength": 1
+            },
+            "plan_period": {
+              "description": "ISO 8601 duration of one billing period, for example P1W, P1M, P3M, P1Y.",
+              "type": "string",
+              "pattern": "^P(?=\\d)(?:\\d+Y)?(?:\\d+M)?(?:\\d+W)?(?:\\d+D)?$"
+            },
+            "trial_length_days": {
+              "description": "Length of the trial in whole days.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "trial_ends_at": {
+              "description": "When the trial ends (RFC 3339).",
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "current_period_ends_at": {
+              "description": "When the current paid period ends (RFC 3339).",
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "access_ends_at": {
+              "description": "When access ends after a cancel (RFC 3339).",
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "grace_ends_at": {
+              "description": "When the billing grace period ends (RFC 3339).",
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+            },
+            "store_cancel_reason": {
+              "description": "Why the store reports the cancel (playbook 3.8).",
+              "enum": [
+                "unsubscribe",
+                "billing_error",
+                "developer_initiated",
+                "price_increase",
+                "customer_support",
+                "unknown"
+              ]
+            },
+            "end_reason": {
+              "description": "Why the membership ended (playbook 3.8).",
+              "enum": [
+                "voluntary",
+                "billing",
+                "price_increase",
+                "product_unavailable",
+                "developer_initiated",
+                "refund",
+                "other"
+              ]
+            },
+            "access_source": {
+              "description": "Where the access comes from (playbook 3.8).",
+              "enum": [
+                "self_subscription",
+                "lifetime",
+                "family_share",
+                "promotional",
+                "sponsored",
+                "web_other"
+              ]
+            },
+            "is_resubscribe": {
+              "type": "boolean",
+              "description": "true when the user had a paid membership before."
+            },
+            "is_first_ever": {
+              "type": "boolean",
+              "description": "true for the first paid start of this user ever."
+            },
+            "entitlements": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "The entitlement ids the membership grants."
+            },
+            "paid_periods_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Paid periods so far, including this one."
+            },
+            "has_access": {
+              "type": "boolean",
+              "description": "true when the user keeps access during the billing issue."
+            }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "trial_started"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "propertyNames": {
+                  "enum": [
+                    "trial_length_days",
+                    "trial_ends_at",
+                    "plan_period",
+                    "plan_id",
+                    "price",
+                    "currency",
+                    "transaction_id",
+                    "store"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "trial_converted"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "propertyNames": {
+                  "enum": [
+                    "plan_period",
+                    "current_period_ends_at",
+                    "plan_id",
+                    "price",
+                    "currency",
+                    "transaction_id",
+                    "store"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "trial_auto_renew_disabled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "propertyNames": {
+                  "enum": [
+                    "trial_ends_at",
+                    "store_cancel_reason",
+                    "plan_id",
+                    "price",
+                    "currency",
+                    "transaction_id",
+                    "store"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "membership_started"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "propertyNames": {
+                  "enum": [
+                    "plan_period",
+                    "is_resubscribe",
+                    "is_first_ever",
+                    "access_source",
+                    "entitlements",
+                    "current_period_ends_at",
+                    "plan_id",
+                    "price",
+                    "currency",
+                    "transaction_id",
+                    "store"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "renewal_succeeded"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "propertyNames": {
+                  "enum": [
+                    "paid_periods_count",
+                    "current_period_ends_at",
+                    "plan_id",
+                    "price",
+                    "currency",
+                    "transaction_id",
+                    "store"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "auto_renew_disabled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "propertyNames": {
+                  "enum": [
+                    "access_ends_at",
+                    "store_cancel_reason",
+                    "plan_id",
+                    "price",
+                    "currency",
+                    "transaction_id",
+                    "store"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "auto_renew_enabled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "propertyNames": {
+                  "enum": [
+                    "plan_id",
+                    "price",
+                    "currency",
+                    "transaction_id",
+                    "store"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "membership_ended"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "propertyNames": {
+                  "enum": [
+                    "end_reason",
+                    "plan_period",
+                    "paid_periods_count",
+                    "plan_id",
+                    "price",
+                    "currency",
+                    "transaction_id",
+                    "store"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "billing_issue_started"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "propertyNames": {
+                  "enum": [
+                    "has_access",
+                    "grace_ends_at",
+                    "plan_id",
+                    "price",
+                    "currency",
+                    "transaction_id",
+                    "store"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "billing_recovered"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "propertyNames": {
+                  "enum": [
+                    "plan_id",
+                    "price",
+                    "currency",
+                    "transaction_id",
+                    "store"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "refund_granted"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "properties": {
+                "propertyNames": {
+                  "enum": [
+                    "plan_id",
+                    "price",
+                    "currency",
+                    "transaction_id",
+                    "store"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

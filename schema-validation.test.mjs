@@ -179,14 +179,38 @@ test('the wire identify schema rejects what an anonymous identify may not carry'
   assert.ok(identify({ external_user_id: 'user_1', channels: [{ channel: 'email', address: 'ada@example.com' }] }));
 });
 
-test('billing fallback names pin the property formats', () => {
+test('billing fallback names follow the playbook engine spec 3.8', () => {
   const { billing } = wireValidators();
-  const ok = { event_type: 'subscription_renewed', properties: { product_id: 'pro_monthly', price: 9.99, currency: 'EUR', period: 'P1M', transaction_id: 't_1', store: 'app_store' } };
-  assert.ok(billing(ok));
-  assert.equal(billing({ ...ok, event_type: 'subscription_canceled' }), false);
-  assert.equal(billing({ ...ok, properties: { ...ok.properties, currency: 'eur' } }), false);
-  assert.equal(billing({ ...ok, properties: { ...ok.properties, price: '9.99' } }), false);
-  assert.equal(billing({ ...ok, properties: { ...ok.properties, period: 'P' } }), false);
+  const money = { plan_id: 'pro_monthly', price: 9.99, currency: 'EUR', transaction_id: 't_1', store: 'app_store' };
+  const ok = [
+    { event_type: 'trial_started', properties: { ...money, trial_length_days: 7, trial_ends_at: '2026-10-19T12:00:00Z', plan_period: 'P1M' } },
+    { event_type: 'trial_converted', properties: { plan_period: 'P1Y', current_period_ends_at: '2027-10-19T12:00:00.000Z' } },
+    { event_type: 'trial_auto_renew_disabled', properties: { trial_ends_at: '2026-10-19T12:00:00+04:00', store_cancel_reason: 'unsubscribe' } },
+    { event_type: 'membership_started', properties: { ...money, plan_period: 'P1M', is_resubscribe: false, is_first_ever: true, access_source: 'self_subscription', entitlements: ['pro'], current_period_ends_at: '2026-11-12T12:00:00Z' } },
+    { event_type: 'renewal_succeeded', properties: { ...money, paid_periods_count: 3, current_period_ends_at: '2026-11-12T12:00:00Z' } },
+    { event_type: 'auto_renew_disabled', properties: { access_ends_at: '2026-11-12T12:00:00Z', store_cancel_reason: 'price_increase' } },
+    { event_type: 'auto_renew_enabled', properties: {} },
+    { event_type: 'membership_ended', properties: { end_reason: 'refund', plan_period: 'P1M', paid_periods_count: 2 } },
+    { event_type: 'billing_issue_started', properties: { has_access: true, grace_ends_at: '2026-10-28T12:00:00Z' } },
+    { event_type: 'billing_recovered', properties: { ...money } },
+    { event_type: 'refund_granted', properties: { ...money } },
+  ];
+  for (const event of ok) assert.ok(billing(event), `${event.event_type}: ${JSON.stringify(billing.errors)}`);
+  const bad = [
+    ['dropped name', { event_type: 'subscription_renewed', properties: {} }],
+    ['dropped name', { event_type: 'payment_failed', properties: {} }],
+    ['renamed product_id', { event_type: 'renewal_succeeded', properties: { product_id: 'pro_monthly' } }],
+    ['renamed period', { event_type: 'membership_ended', properties: { period: 'P1M' } }],
+    ['prop of another event', { event_type: 'trial_started', properties: { end_reason: 'voluntary' } }],
+    ['store_cancel_reason outside the list', { event_type: 'auto_renew_disabled', properties: { store_cancel_reason: 'too_expensive' } }],
+    ['end_reason outside the list', { event_type: 'membership_ended', properties: { end_reason: 'cancelled' } }],
+    ['access_source outside the list', { event_type: 'membership_started', properties: { access_source: 'gift' } }],
+    ['lower-case currency', { event_type: 'refund_granted', properties: { currency: 'eur' } }],
+    ['price as a string', { event_type: 'refund_granted', properties: { price: '9.99' } }],
+    ['empty plan_period', { event_type: 'trial_converted', properties: { plan_period: 'P' } }],
+    ['timestamp without a zone', { event_type: 'renewal_succeeded', properties: { current_period_ends_at: '2026-11-12T12:00:00' } }],
+  ];
+  for (const [why, event] of bad) assert.equal(billing(event), false, why);
 });
 
 test('every superseded legacy case exists', () => {
