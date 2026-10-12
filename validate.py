@@ -112,6 +112,20 @@ for where, name, sec in v2_sections:
         seen_names[key] = name
 for name, sec in v2.get("sections", {}).items():
     for c in sec.get("cases", []):
+        # Automatic events in v2.json (push_permission_changed) follow the catalogue.
+        f = "conformance/v2.json"  # check_value reports against f
+        for request in c.get("expectedRequests", []):
+            for e in request.get("events", []):
+                r = reserved.get(e["event_type"])
+                if r is None: continue
+                where = f"v2 case {c['name']!r} {e['event_type']}"
+                allowed = {**common, **r["properties"]}
+                for key, value in e["properties"].items():
+                    if key not in allowed: err("conformance/v2.json", f"{where}: {key!r} is not a property of it")
+                    else: check_value(where, key, allowed[key], value)
+                for key, spec in allowed.items():
+                    if spec.get("required") and key not in e["properties"]:
+                        err("conformance/v2.json", f"{where}: must carry {key!r}")
         steps = c.get("steps", [])
         uses_clock = any("advanceClock" in st for st in steps)
         # A device step without a device block would turn detection on halfway.

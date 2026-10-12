@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/v2.schema.json",
   "version": 1,
-  "description": "SDK contract v2 flows (SPEC.md -> Contract v2 conformance). Every section is opt-in: an SDK runs a section when it implements that feature and its kind of SDK is in appliesTo. When it runs a section, it skips the legacy cases that section lists in supersedes (format <file>:<case name>); an SDK that runs no section keeps running every legacy case and stays conformant to v1. Harness: each case builds a fresh client on empty storage with automatic events OFF and an injected wall clock, runs steps through the public API in order, flushes after every step, and asserts that ALL requests the case sent equal expectedRequests, in order. identify maps to identify() (pushToken expands to an opted-in push channel); track maps to track(); setPushToken maps to setPushToken (string form: no explicit token fields; object form: explicit kind, platform, pushEnv, clientAppId, providerProject, which win over detected values); setAppLanguage maps to setAppLanguage (null clears); restart rebuilds the client on the same storage (object form: the app calls identify() in the same synchronous tick as construction); reset, optOut, optIn and pushPermission map to those APIs as in push.json; advanceClock moves the injected wall clock; setDevice replaces the injected device values. Environment detection (device default traits, version context keys, detected push token fields) is ON only in cases with a device block and reads only the values in it; without a device block it is OFF, as in every legacy harness. Comparison: /v1/identify bodies are compared exactly, except that the harness ignores anonymous_id on a body that carries external_user_id when the expected body does not name it (an SDK may hold a handle for its anonymous event lane). /v1/events/batch events are compared without occurred_at; a /v1/events/track request counts as a batch of one; context must carry $message_id, and when the expected event names context the harness checks the governed keys (app_version, app_build, platform, sdk_name, sdk_version, locale): a named key must be equal, an unnamed governed key must be absent, other keys are ignored. Placeholders: $anon_<x> binds to the first handle seen for it, every later use must carry the same value, and distinct placeholders must carry distinct values; $platform, $sdk_name and $sdk_version are the SDK's own values.",
+  "description": "SDK contract v2 flows (SPEC.md -> Contract v2 conformance). Every section is opt-in: an SDK runs a section when it implements that feature and its kind of SDK is in appliesTo. When it runs a section, it skips the legacy cases that section lists in supersedes (format <file>:<case name>); an SDK that runs no section keeps running every legacy case and stays conformant to v1. Harness: each case builds a fresh client on empty storage with automatic events OFF and an injected wall clock, runs steps through the public API in order, flushes after every step, and asserts that ALL requests the case sent match expectedRequests (see Comparison). identify maps to identify() (pushToken expands to an opted-in push channel); track maps to track(); setPushToken maps to setPushToken (string form: no explicit token fields; object form: explicit kind, platform, pushEnv, clientAppId, providerProject, which win over detected values); setAppLanguage maps to setAppLanguage (null clears); restart rebuilds the client on the same storage (object form: the app calls identify() in the same synchronous tick as construction); reset, optOut, optIn and pushPermission map to those APIs as in push.json; advanceClock moves the injected wall clock; setDevice replaces the injected device values. Environment detection (device default traits, version context keys, detected push token fields) is ON only in cases with a device block and reads only the values in it; without a device block it is OFF, as in every legacy harness. Comparison is per endpoint: the /v1/identify bodies must equal the expected identify bodies in order, and the events must equal the expected events in order; the harness does not compare the order between an identify and an event (an explicit permission report queues an event and an identify in the same step, in an order this contract leaves open). /v1/identify bodies are compared exactly, except that the harness ignores anonymous_id on a body that carries external_user_id when the expected body does not name it (an SDK may hold a handle for its anonymous event lane). /v1/events/batch events are compared without occurred_at; a /v1/events/track request counts as a batch of one; context must carry $message_id, and when the expected event names context the harness checks the governed keys (app_version, app_build, platform, sdk_name, sdk_version, locale): a named key must be equal, an unnamed governed key must be absent, other keys are ignored. push_permission_changed is the one automatic event in v2.json: the SDK sends it for an explicit pushPermission step even with automatic events off. The harness compares it as automatic.json does: event_type and exactly the same properties, after it removes identity fields, occurred_at and context. Its properties carry the common properties the SDK always knows (platform and os_name as $platform, $sdk_name, $sdk_version); a case without a device block has no device values. An SDK that buffers pre-identify events locally sends such an event after the next identify(); every case that reports a permission before identify() calls identify() later, so both kinds of SDK send it. Placeholders: $anon_<x> binds to the first handle seen for it, every later use must carry the same value, and distinct placeholders must carry distinct values; $platform, $sdk_name and $sdk_version are the SDK's own values.",
   "sections": {
     "restoreIdentify": {
       "description": "C1 restore identify at start (SPEC.md -> Restore identify at start). At start, with a stored user and no opt-out, the SDK queues one identify {external_user_id, anonymous_id if stored, traits: device defaults + app_language} with no channels. It skips it when it delivered an identify() or a restore identify for the same user with the same restore traits less than 24 hours ago (injected clock), and when the app calls identify() in the same tick as construction. Opted out or no stored user: nothing. Cases with a device block turn device default traits on.",
@@ -807,7 +807,7 @@
       ]
     },
     "anonymousPush": {
-      "description": "C3 anonymous push token lane (SPEC.md -> Push tokens). setPushToken before identify() sends an anonymous identify {anonymous_id, channels: [push]} right away (the SDK creates the handle on first need). The dedupe pair is (subject, token), where subject is the user id or the anonymous id. identify() attaches a token registered under the handle. reset() with a known token opts it out under the old subject, rotates the handle, and opts it in under the new handle. optOut() opts an anonymous token out under the handle. These cases have no device block, so no token fields are detected.",
+      "description": "C3 anonymous push token lane (SPEC.md -> Push tokens). setPushToken before identify() sends an anonymous identify {anonymous_id, channels: [push]} right away (the SDK creates the handle on first need). The dedupe pair is (subject, token), where subject is the user id or the anonymous id. identify() attaches a token registered under the handle. reset() with a known token opts it out under the old subject, rotates the handle, and opts it in under the new handle. optOut() opts an anonymous token out under the handle. These cases have no device block, so no token fields are detected. A pushPermission step is an explicit report through the SDK's permission API, so the SDK also sends push_permission_changed even with automatic events off (SPEC.md -> Automatic events: the off switch stops only the automatic read; the app can always report it).",
       "appliesTo": [
         "mobile"
       ],
@@ -1206,12 +1206,62 @@
             },
             {
               "pushPermission": "authorized"
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
             }
           ],
           "expectedRequests": [
             {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "event_type": "push_permission_changed",
+                  "properties": {
+                    "os_name": "$platform",
+                    "platform": "$platform",
+                    "sdk_name": "$sdk_name",
+                    "sdk_version": "$sdk_version",
+                    "status": "denied"
+                  }
+                }
+              ]
+            },
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "event_type": "push_permission_changed",
+                  "properties": {
+                    "os_name": "$platform",
+                    "platform": "$platform",
+                    "previous_status": "denied",
+                    "sdk_name": "$sdk_name",
+                    "sdk_version": "$sdk_version",
+                    "status": "authorized"
+                  }
+                }
+              ]
+            },
+            {
               "endpoint": "/v1/identify",
               "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
                 "anonymous_id": "$anon_a",
                 "channels": [
                   {
@@ -1244,10 +1294,41 @@
           ],
           "expectedRequests": [
             {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "event_type": "push_permission_changed",
+                  "properties": {
+                    "os_name": "$platform",
+                    "platform": "$platform",
+                    "sdk_name": "$sdk_name",
+                    "sdk_version": "$sdk_version",
+                    "status": "denied"
+                  }
+                }
+              ]
+            },
+            {
               "endpoint": "/v1/identify",
               "body": {
                 "external_user_id": "user_1"
               }
+            },
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "event_type": "push_permission_changed",
+                  "properties": {
+                    "os_name": "$platform",
+                    "platform": "$platform",
+                    "previous_status": "denied",
+                    "sdk_name": "$sdk_name",
+                    "sdk_version": "$sdk_version",
+                    "status": "authorized"
+                  }
+                }
+              ]
             },
             {
               "endpoint": "/v1/identify",
@@ -1301,6 +1382,21 @@
                   }
                 ]
               }
+            },
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "event_type": "push_permission_changed",
+                  "properties": {
+                    "os_name": "$platform",
+                    "platform": "$platform",
+                    "sdk_name": "$sdk_name",
+                    "sdk_version": "$sdk_version",
+                    "status": "denied"
+                  }
+                }
+              ]
             },
             {
               "endpoint": "/v1/identify",
