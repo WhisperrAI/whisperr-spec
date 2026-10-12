@@ -108,14 +108,19 @@ PostHog project key, not a secret.
   - `address` (string, required).
   - `opted_in` (bool, optional) — the customer's consent for this address.
     `false` records an opt-out with any key. Only a request made with the
-    **server key** (`wrk_…`) can set `true`. With the publishable key
-    (`wpk_…`), the server stores an `email` or `sms` address as not opted in
-    and ignores `true`. An `sms` channel without `opted_in` is not opted in,
-    for any key. A `push` token follows the device permission: see
+    **server key** (`wrk_…`) can opt an address in. With the publishable key
+    (`wpk_…`), the request still succeeds: the server stores a new `email` or
+    `sms` address as pending (unverified, not opted in), ignores `true`, and
+    leaves an existing address as it is. With the server key, an omitted
+    `opted_in` opts in a new `email` address and confirms a pending one; an
+    address that already holds a decision keeps it. An `sms` channel without
+    `opted_in` is never opted in, for any key. A `push` token follows the
+    device permission: see
     [Push permission and the token](#push-permission-and-the-token).
-  - `verified` (bool, optional) — omit unless set. Only the server key can set
-    `true`. With the publishable key, the server stores an `email` or `sms`
-    address as unverified.
+  - `verified` (bool, optional) — omit unless set. Only the server key can
+    verify an address; with it, an omitted `verified` counts as `true` unless
+    the address was last declared `false`. With the publishable key, the
+    server stores a new `email` or `sms` address as unverified.
   - `kind` (string, optional, `push` only) — `fcm` | `apns` | `expo` |
     `onesignal_sub`. The token type. See [Token kind](#token-kind).
   - `platform` (string, optional, `push` only) — `ios` | `android` | `web` |
@@ -127,8 +132,10 @@ Convenience shortcuts in the SDK APIs (`email` / `phone` / `pushToken`) expand t
 `email` / `sms` / `push` channels respectively. In a client SDK they run with the
 publishable key, so they do not grant email or SMS consent, and the `phone`
 shortcut never grants SMS consent. Consent must be confirmed from the backend
-with the server key: a server-SDK `identify()` with `opted_in` / `verified`, or
-`POST /v1/consent/assertions` (see
+with the server key: a server-SDK `identify()` (or a tracked event's
+`user.channels`) of the same address with `opted_in: true`, and `verified: true`
+for a confirmed email. `POST /v1/consent/assertions` records consent proof but
+does not confirm a pending address by itself (see
 [`contracts/04`](contracts/04-consent-assertion.md)).
 
 ### Reserved trait keys
