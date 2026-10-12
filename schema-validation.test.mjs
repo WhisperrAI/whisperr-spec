@@ -11,8 +11,8 @@ const root = dirname(fileURLToPath(import.meta.url));
 test('all committed schemas compile and fixtures structurally conform', () => {
   const result = validateSchemas(root);
   assert.deepEqual(result.errors, []);
-  assert.equal(result.schemaCount, 15);
-  assert.equal(result.fixtureCount, 17);
+  assert.equal(result.schemaCount, 16);
+  assert.equal(result.fixtureCount, 18);
 });
 
 for (const [name, file, mutate] of [
@@ -33,6 +33,13 @@ for (const [name, file, mutate] of [
   ['object setPushToken in legacy push cases', 'conformance/push.json', d => { d.cases[0].steps[1] = { setPushToken: { token: 'fcm_tok_a', kind: 'fcm' } }; }],
   ['unknown push token kind', 'conformance/push.json', d => { d.kindCases[0].steps[1].setPushToken.kind = 'hms'; }],
   ['unknown push_env on the wire', 'conformance/push.json', d => { d.kindCases[0].expectedBodies[1].channels[0].push_env = 'debug'; }],
+  ['unknown v2 step', 'conformance/v2.json', d => { d.sections.restoreIdentify.cases[0].steps.push({ sleep: true }); }],
+  ['missing v2 section', 'conformance/v2.json', d => { delete d.sections.appLanguage; }],
+  ['v2 clock step with a fractional hour', 'conformance/v2.json', d => { d.sections.restoreIdentify.cases[0].steps[1] = { advanceClock: { hours: 0.5 } }; }],
+  ['v2 supersedes entry without a fixture file', 'conformance/v2.json', d => { d.sections.anonymousPush.supersedes.push('set_push_token_before_identify_buffers'); }],
+  ['v2 context with a literal platform', 'conformance/v2.json', d => { d.sections.versionContext.cases[0].expectedRequests[1].events[0].context.platform = 'ios'; }],
+  ['push_received source outside the enum', 'conformance/automatic.json', d => { d.pushEventsV2.cases[0].steps[1].receivePush.source = 'background'; }],
+  ['legacy pushOpened step in v2 automatic cases', 'conformance/automatic.json', d => { d.pushEventsV2.cases[0].steps.push({ pushOpened: { whisperr_message_id: 'm' } }); }],
 ]) {
   test(`validator rejects ${name}`, () => {
     const temp = mkdtempSync(join(tmpdir(), 'whisperr-schema-'));
@@ -97,5 +104,99 @@ test('legacy push cases keep the string-only setPushToken step', () => {
         for (const key of ['kind', 'platform', 'push_env']) assert.ok(!(key in channel), `${c.name} pins ${key}`);
       }
     }
+  }
+});
+
+// Contract v2: the expected requests in v2.json are real wire bodies once the
+// harness placeholders are replaced, so a fixture cannot pin a body the server
+// would reject (for example an email channel on an anonymous identify).
+function wireValidators() {
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  for (const name of ['push.schema.json', 'wire.schema.json']) ajv.addSchema(JSON.parse(readFileSync(join(root, 'schemas', name), 'utf8')));
+  const base = 'https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/wire.schema.json#/$defs/';
+  return { ajv, identify: ajv.getSchema(`${base}identify_body`), event: ajv.getSchema(`${base}event`), billing: ajv.getSchema(`${base}billing_event`) };
+}
+const PLACEHOLDERS = { $platform: 'ios', $sdk_name: 'whisperr-swift', $sdk_version: '2.0.0' };
+function substitute(value) {
+  if (typeof value === 'string') {
+    if (value in PLACEHOLDERS) return PLACEHOLDERS[value];
+    if (/^\$anon_[a-z0-9]+$/u.test(value)) return `3f2c9a1e-${value.slice(6).padEnd(4, '0')}-4b1d-9e2f-7a6b5c4d3e2f`;
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(substitute);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, substitute(v)]));
+  return value;
+}
+
+test('v2 expected requests are valid wire bodies after placeholder substitution', () => {
+  const v2 = JSON.parse(readFileSync(join(root, 'conformance/v2.json'), 'utf8'));
+  const { ajv, identify, event } = wireValidators();
+  let bodies = 0;
+  for (const [section, { cases }] of Object.entries(v2.sections)) {
+    for (const c of cases) {
+      for (const request of c.expectedRequests) {
+        if (request.endpoint === '/v1/identify') {
+          bodies++;
+          assert.ok(identify(substitute(request.body)), `${section}/${c.name}: ${ajv.errorsText(identify.errors)}`);
+        } else {
+          for (const e of request.events) {
+            const sent = substitute({ ...e, occurred_at: '2026-10-12T12:00:00.000Z', context: { $message_id: 'm1', ...(e.context ?? {}) } });
+            assert.ok(event(sent), `${section}/${c.name}: ${ajv.errorsText(event.errors)}`);
+          }
+        }
+      }
+    }
+  }
+  assert.ok(bodies > 0);
+});
+
+test('v2 expected bodies never put locale in context and anonymous identifies carry only traits and push', () => {
+  const v2 = JSON.parse(readFileSync(join(root, 'conformance/v2.json'), 'utf8'));
+  for (const { cases } of Object.values(v2.sections)) {
+    for (const c of cases) {
+      for (const request of c.expectedRequests) {
+        for (const e of request.events ?? []) assert.ok(!('locale' in (e.context ?? {})), c.name);
+        const body = request.body;
+        if (body && !('external_user_id' in body)) {
+          assert.deepEqual(Object.keys(body).filter(k => !['anonymous_id', 'traits', 'channels'].includes(k)), [], c.name);
+          for (const ch of body.channels ?? []) assert.equal(ch.channel, 'push', c.name);
+        }
+      }
+    }
+  }
+});
+
+test('the wire identify schema rejects what an anonymous identify may not carry', () => {
+  const { identify } = wireValidators();
+  const anon = { anonymous_id: '3f2c9a1e-0000-4b1d-9e2f-7a6b5c4d3e2f' };
+  assert.ok(identify({ ...anon, traits: { app_language: 'de' } }));
+  assert.ok(identify({ ...anon, channels: [{ channel: 'push', address: 'fcm_tok_a', opted_in: true, client_app_id: 'com.example.app', provider_project: 'example-project' }] }));
+  assert.equal(identify({ ...anon, channels: [{ channel: 'email', address: 'ada@example.com', opted_in: true }] }), false);
+  assert.equal(identify({ ...anon, channels: [{ channel: 'sms', address: '+15551234567' }] }), false);
+  assert.equal(identify({ ...anon, traits: {}, preferred_channel: 'push' }), false);
+  assert.equal(identify({ traits: { plan: 'pro' } }), false, 'neither external_user_id nor anonymous_id');
+  assert.equal(identify({ ...anon, traits: { app_language: 'pt_BR' } }), false, 'the SDK sends app_language with a hyphen');
+  assert.ok(identify({ external_user_id: 'user_1', channels: [{ channel: 'email', address: 'ada@example.com' }] }));
+});
+
+test('billing fallback names pin the property formats', () => {
+  const { billing } = wireValidators();
+  const ok = { event_type: 'subscription_renewed', properties: { product_id: 'pro_monthly', price: 9.99, currency: 'EUR', period: 'P1M', transaction_id: 't_1', store: 'app_store' } };
+  assert.ok(billing(ok));
+  assert.equal(billing({ ...ok, event_type: 'subscription_canceled' }), false);
+  assert.equal(billing({ ...ok, properties: { ...ok.properties, currency: 'eur' } }), false);
+  assert.equal(billing({ ...ok, properties: { ...ok.properties, price: '9.99' } }), false);
+  assert.equal(billing({ ...ok, properties: { ...ok.properties, period: 'P' } }), false);
+});
+
+test('every superseded legacy case exists', () => {
+  const load = name => JSON.parse(readFileSync(join(root, 'conformance', name), 'utf8'));
+  const v2 = load('v2.json');
+  const automatic = load('automatic.json');
+  const refs = [...Object.values(v2.sections).flatMap(s => s.supersedes), ...automatic.pushEventsV2.supersedes];
+  assert.ok(refs.length > 0);
+  for (const ref of refs) {
+    const [file, name] = ref.split(':');
+    assert.ok(load(file).cases.some(c => c.name === name), ref);
   }
 });

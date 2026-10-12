@@ -181,6 +181,40 @@
           "type": "string",
           "required": false,
           "description": "Copied from the notification data when present."
+        },
+        "action_id": {
+          "type": "string",
+          "required": false,
+          "description": "Contract v2. default for a tap on the notification body; otherwise the identifier of the action button the user tapped."
+        },
+        "cold_start": {
+          "type": "boolean",
+          "required": false,
+          "description": "Contract v2. true when the open launched the app process; false when the app was already running."
+        }
+      }
+    },
+    {
+      "name": "push_received",
+      "trigger": "Contract v2. The device receives a push whose data carries whisperr_message_id. Once per message id on this device.",
+      "automatic": "framework",
+      "countsAsActivity": false,
+      "properties": {
+        "whisperr_message_id": {
+          "type": "string",
+          "required": true,
+          "description": "Copied from the notification data."
+        },
+        "foreground": {
+          "type": "boolean",
+          "required": true,
+          "description": "true when the app was in the foreground when the push arrived."
+        },
+        "source": {
+          "type": "string",
+          "required": true,
+          "enum": ["foreground", "nse", "android_service", "expo_task"],
+          "description": "The code path that saw the push: the in-app foreground handler, the iOS Notification Service Extension, the Android messaging service, or an Expo background task."
         }
       }
     },
@@ -1509,5 +1543,635 @@
         }
       ]
     }
-  ]
+  ],
+  "pushEventsV2": {
+    "description": "Contract v2 push events (SPEC.md -> Automatic events). Opt-in: an SDK that implements push_received and the v2 push_opened properties runs these cases on the same harness as `cases`, and skips the legacy cases listed in supersedes. Two v2 steps: `receivePush` hands the data payload to the SDK's receipt path named by `source`, with the app in the foreground or not (`foreground`); an SDK that has no such path skips the case. `openPush` hands the data payload to the SDK's push-open API; `actionId` is the tapped action button (absent: a tap on the notification body), and `launchedApp` says whether the open launched the process (the app reads it as the initial notification). When an expected event names `context`, the harness checks the governed context keys as v2.json does: a named key must be equal, an unnamed governed key (app_version, app_build, platform, sdk_name, sdk_version, locale) must be absent; without `context` it removes context as for `cases`.",
+    "supersedes": [
+      "automatic.json:push_open_sends_push_opened_with_message_id_and_deep_link",
+      "automatic.json:push_open_without_deep_link_omits_the_key",
+      "automatic.json:off_switch_stops_lifecycle_events_but_not_manual_calls"
+    ],
+    "cases": [
+      {
+        "name": "foreground_receipt_then_open_send_push_received_and_push_opened",
+        "device": {
+          "osVersion": "18.2",
+          "locale": "de-DE",
+          "timezone": "Europe/Berlin"
+        },
+        "steps": [
+          {
+            "launch": {
+              "appVersion": "1.4.0",
+              "appBuild": "140"
+            }
+          },
+          {
+            "receivePush": {
+              "data": {
+                "whisperr_message_id": "msg_8a01",
+                "title": "Your streak is waiting"
+              },
+              "source": "foreground",
+              "foreground": true
+            }
+          },
+          {
+            "openPush": {
+              "data": {
+                "whisperr_message_id": "msg_8a01",
+                "whisperr_deep_link": "myapp://offers/annual"
+              },
+              "launchedApp": false
+            }
+          }
+        ],
+        "expectedEvents": [
+          {
+            "event_type": "app_installed",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          },
+          {
+            "event_type": "app_opened",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "cold_start": true,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          },
+          {
+            "event_type": "push_received",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "foreground": true,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "source": "foreground",
+              "timezone": "Europe/Berlin",
+              "whisperr_message_id": "msg_8a01"
+            },
+            "context": {
+              "app_version": "1.4.0",
+              "app_build": "140",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version"
+            }
+          },
+          {
+            "event_type": "push_opened",
+            "properties": {
+              "action_id": "default",
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "cold_start": false,
+              "deep_link": "myapp://offers/annual",
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin",
+              "whisperr_message_id": "msg_8a01"
+            },
+            "context": {
+              "app_version": "1.4.0",
+              "app_build": "140",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version"
+            }
+          }
+        ]
+      },
+      {
+        "name": "push_received_is_sent_once_per_message_id",
+        "device": {
+          "osVersion": "18.2",
+          "locale": "de-DE",
+          "timezone": "Europe/Berlin"
+        },
+        "steps": [
+          {
+            "launch": {
+              "appVersion": "1.4.0",
+              "appBuild": "140"
+            }
+          },
+          {
+            "receivePush": {
+              "data": {
+                "whisperr_message_id": "msg_8a02"
+              },
+              "source": "foreground",
+              "foreground": true
+            }
+          },
+          {
+            "receivePush": {
+              "data": {
+                "whisperr_message_id": "msg_8a02"
+              },
+              "source": "foreground",
+              "foreground": true
+            }
+          },
+          {
+            "receivePush": {
+              "data": {
+                "whisperr_message_id": "msg_8a03"
+              },
+              "source": "foreground",
+              "foreground": true
+            }
+          }
+        ],
+        "expectedEvents": [
+          {
+            "event_type": "app_installed",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          },
+          {
+            "event_type": "app_opened",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "cold_start": true,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          },
+          {
+            "event_type": "push_received",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "foreground": true,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "source": "foreground",
+              "timezone": "Europe/Berlin",
+              "whisperr_message_id": "msg_8a02"
+            }
+          },
+          {
+            "event_type": "push_received",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "foreground": true,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "source": "foreground",
+              "timezone": "Europe/Berlin",
+              "whisperr_message_id": "msg_8a03"
+            }
+          }
+        ]
+      },
+      {
+        "name": "background_receipt_and_foreground_handler_dedupe_by_message_id",
+        "device": {
+          "osVersion": "18.2",
+          "locale": "de-DE",
+          "timezone": "Europe/Berlin"
+        },
+        "steps": [
+          {
+            "launch": {
+              "appVersion": "1.4.0",
+              "appBuild": "140"
+            }
+          },
+          {
+            "receivePush": {
+              "data": {
+                "whisperr_message_id": "msg_8a04"
+              },
+              "source": "nse",
+              "foreground": true
+            }
+          },
+          {
+            "receivePush": {
+              "data": {
+                "whisperr_message_id": "msg_8a04"
+              },
+              "source": "foreground",
+              "foreground": true
+            }
+          }
+        ],
+        "expectedEvents": [
+          {
+            "event_type": "app_installed",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          },
+          {
+            "event_type": "app_opened",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "cold_start": true,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          },
+          {
+            "event_type": "push_received",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "foreground": true,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "source": "nse",
+              "timezone": "Europe/Berlin",
+              "whisperr_message_id": "msg_8a04"
+            }
+          }
+        ]
+      },
+      {
+        "name": "push_received_without_whisperr_message_id_sends_nothing",
+        "device": {
+          "osVersion": "18.2",
+          "locale": "de-DE",
+          "timezone": "Europe/Berlin"
+        },
+        "steps": [
+          {
+            "launch": {
+              "appVersion": "1.4.0",
+              "appBuild": "140"
+            }
+          },
+          {
+            "receivePush": {
+              "data": {
+                "title": "Sent by another provider"
+              },
+              "source": "foreground",
+              "foreground": true
+            }
+          }
+        ],
+        "expectedEvents": [
+          {
+            "event_type": "app_installed",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          },
+          {
+            "event_type": "app_opened",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "cold_start": true,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          }
+        ]
+      },
+      {
+        "name": "push_open_that_launched_the_app_has_cold_start_true",
+        "device": {
+          "osVersion": "18.2",
+          "locale": "de-DE",
+          "timezone": "Europe/Berlin"
+        },
+        "steps": [
+          {
+            "launch": {
+              "appVersion": "1.4.0",
+              "appBuild": "140"
+            }
+          },
+          {
+            "openPush": {
+              "data": {
+                "whisperr_message_id": "msg_8a05"
+              },
+              "launchedApp": true
+            }
+          }
+        ],
+        "expectedEvents": [
+          {
+            "event_type": "app_installed",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          },
+          {
+            "event_type": "app_opened",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "cold_start": true,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          },
+          {
+            "event_type": "push_opened",
+            "properties": {
+              "action_id": "default",
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "cold_start": true,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin",
+              "whisperr_message_id": "msg_8a05"
+            }
+          }
+        ]
+      },
+      {
+        "name": "push_open_from_an_action_button_carries_its_identifier",
+        "device": {
+          "osVersion": "18.2",
+          "locale": "de-DE",
+          "timezone": "Europe/Berlin"
+        },
+        "steps": [
+          {
+            "launch": {
+              "appVersion": "1.4.0",
+              "appBuild": "140"
+            }
+          },
+          {
+            "openPush": {
+              "data": {
+                "whisperr_message_id": "msg_8a06"
+              },
+              "launchedApp": false,
+              "actionId": "snooze"
+            }
+          }
+        ],
+        "expectedEvents": [
+          {
+            "event_type": "app_installed",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          },
+          {
+            "event_type": "app_opened",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "cold_start": true,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          },
+          {
+            "event_type": "push_opened",
+            "properties": {
+              "action_id": "snooze",
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "cold_start": false,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin",
+              "whisperr_message_id": "msg_8a06"
+            }
+          }
+        ]
+      },
+      {
+        "name": "push_received_while_opted_out_sends_nothing",
+        "device": {
+          "osVersion": "18.2",
+          "locale": "de-DE",
+          "timezone": "Europe/Berlin"
+        },
+        "steps": [
+          {
+            "launch": {
+              "appVersion": "1.4.0",
+              "appBuild": "140"
+            }
+          },
+          {
+            "optOut": true
+          },
+          {
+            "receivePush": {
+              "data": {
+                "whisperr_message_id": "msg_8a07"
+              },
+              "source": "foreground",
+              "foreground": true
+            }
+          }
+        ],
+        "expectedEvents": [
+          {
+            "event_type": "app_installed",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          },
+          {
+            "event_type": "app_opened",
+            "properties": {
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "cold_start": true,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin"
+            }
+          }
+        ]
+      },
+      {
+        "name": "off_switch_stops_push_received_but_not_push_opened",
+        "config": {
+          "automaticEvents": false
+        },
+        "device": {
+          "osVersion": "18.2",
+          "locale": "de-DE",
+          "timezone": "Europe/Berlin"
+        },
+        "steps": [
+          {
+            "launch": {
+              "appVersion": "1.4.0",
+              "appBuild": "140"
+            }
+          },
+          {
+            "receivePush": {
+              "data": {
+                "whisperr_message_id": "msg_8a08"
+              },
+              "source": "foreground",
+              "foreground": true
+            }
+          },
+          {
+            "openPush": {
+              "data": {
+                "whisperr_message_id": "msg_8a08"
+              },
+              "launchedApp": false
+            }
+          }
+        ],
+        "expectedEvents": [
+          {
+            "event_type": "push_opened",
+            "properties": {
+              "action_id": "default",
+              "app_build": "140",
+              "app_version": "1.4.0",
+              "cold_start": false,
+              "locale": "de-DE",
+              "os_name": "$platform",
+              "os_version": "18.2",
+              "platform": "$platform",
+              "sdk_name": "$sdk_name",
+              "sdk_version": "$sdk_version",
+              "timezone": "Europe/Berlin",
+              "whisperr_message_id": "msg_8a08"
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

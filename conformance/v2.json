@@ -1,0 +1,2026 @@
+{
+  "$schema": "../schemas/v2.schema.json",
+  "version": 1,
+  "description": "SDK contract v2 flows (SPEC.md -> Contract v2 conformance). Every section is opt-in: an SDK runs a section when it implements that feature and its kind of SDK is in appliesTo. When it runs a section, it skips the legacy cases that section lists in supersedes (format <file>:<case name>); an SDK that runs no section keeps running every legacy case and stays conformant to v1. Harness: each case builds a fresh client on empty storage with automatic events OFF and an injected wall clock, runs steps through the public API in order, flushes after every step, and asserts that ALL requests the case sent equal expectedRequests, in order. identify maps to identify() (pushToken expands to an opted-in push channel); track maps to track(); setPushToken maps to setPushToken (string form: no explicit token fields; object form: explicit kind, platform, pushEnv, clientAppId, providerProject, which win over detected values); setAppLanguage maps to setAppLanguage (null clears); restart rebuilds the client on the same storage (object form: the app calls identify() in the same synchronous tick as construction); reset, optOut, optIn and pushPermission map to those APIs as in push.json; advanceClock moves the injected wall clock; setDevice replaces the injected device values. Environment detection (device default traits, version context keys, detected push token fields) is ON only in cases with a device block and reads only the values in it; without a device block it is OFF, as in every legacy harness. Comparison: /v1/identify bodies are compared exactly, except that the harness ignores anonymous_id on a body that carries external_user_id when the expected body does not name it (an SDK may hold a handle for its anonymous event lane). /v1/events/batch events are compared without occurred_at; a /v1/events/track request counts as a batch of one; context must carry $message_id, and when the expected event names context the harness checks the governed keys (app_version, app_build, platform, sdk_name, sdk_version, locale): a named key must be equal, an unnamed governed key must be absent, other keys are ignored. Placeholders: $anon_<x> binds to the first handle seen for it, every later use must carry the same value, and distinct placeholders must carry distinct values; $platform, $sdk_name and $sdk_version are the SDK's own values.",
+  "sections": {
+    "restoreIdentify": {
+      "description": "C1 restore identify at start (SPEC.md -> Restore identify at start). At start, with a stored user and no opt-out, the SDK queues one identify {external_user_id, anonymous_id if stored, traits: device defaults + app_language} with no channels. It skips it when it delivered an identify() or a restore identify for the same user with the same restore traits less than 24 hours ago (injected clock), and when the app calls identify() in the same tick as construction. Opted out or no stored user: nothing. Cases with a device block turn device default traits on.",
+      "appliesTo": [
+        "mobile",
+        "web"
+      ],
+      "supersedes": [],
+      "cases": [
+        {
+          "name": "restore_identify_after_24_hours_sends_the_stored_user_with_traits",
+          "device": {
+            "locale": "de-DE"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "advanceClock": {
+                "hours": 25
+              }
+            },
+            {
+              "restart": true
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "locale": "de-DE"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "locale": "de-DE"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "restore_identify_within_24_hours_with_same_traits_is_skipped",
+          "device": {
+            "locale": "de-DE"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "advanceClock": {
+                "hours": 23
+              }
+            },
+            {
+              "restart": true
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "locale": "de-DE"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "restore_identify_within_24_hours_is_sent_when_device_traits_changed",
+          "device": {
+            "locale": "de-DE"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setDevice": {
+                "locale": "fr-FR"
+              }
+            },
+            {
+              "restart": true
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "locale": "de-DE"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "locale": "fr-FR"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "restore_identify_records_its_own_delivery_for_the_throttle",
+          "device": {
+            "locale": "de-DE"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "advanceClock": {
+                "hours": 25
+              }
+            },
+            {
+              "restart": true
+            },
+            {
+              "advanceClock": {
+                "hours": 2
+              }
+            },
+            {
+              "restart": true
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "locale": "de-DE"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "locale": "de-DE"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "restore_identify_is_skipped_when_the_app_identifies_in_the_same_tick",
+          "device": {
+            "locale": "de-DE"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "advanceClock": {
+                "hours": 25
+              }
+            },
+            {
+              "restart": {
+                "thenIdentify": {
+                  "externalUserId": "user_1",
+                  "traits": {
+                    "plan": "pro"
+                  }
+                }
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "locale": "de-DE"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "plan": "pro",
+                  "locale": "de-DE"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "restore_identify_carries_app_language_and_the_stored_anonymous_id",
+          "steps": [
+            {
+              "setAppLanguage": "de"
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "advanceClock": {
+                "hours": 25
+              }
+            },
+            {
+              "restart": true
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "anonymous_id": "$anon_a",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "anonymous_id": "$anon_a",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "restore_identify_without_traits_sends_only_the_user",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "advanceClock": {
+                "hours": 25
+              }
+            },
+            {
+              "restart": true
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            }
+          ]
+        },
+        {
+          "name": "restore_identify_is_not_sent_while_opted_out",
+          "device": {
+            "locale": "de-DE"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "optOut": true
+            },
+            {
+              "advanceClock": {
+                "hours": 25
+              }
+            },
+            {
+              "restart": true
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "locale": "de-DE"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "restore_identify_is_not_sent_after_reset",
+          "device": {
+            "locale": "de-DE"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "reset": true
+            },
+            {
+              "advanceClock": {
+                "hours": 25
+              }
+            },
+            {
+              "restart": true
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "locale": "de-DE"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "appLanguage": {
+      "description": "C2 app_language (SPEC.md -> app_language). setAppLanguage(tag) stores the tag (trimmed, _ changed to -) and sends it: a partial identify {external_user_id, traits: {app_language}} with a current user, an anonymous identify {anonymous_id, traits: {app_language}} without one. Every later identify carries the stored value; a caller-supplied traits.app_language wins. An invalid tag is ignored. The same value as the stored one sends nothing. null clears the stored value and sends nothing.",
+      "appliesTo": [
+        "mobile",
+        "web"
+      ],
+      "supersedes": [],
+      "cases": [
+        {
+          "name": "set_app_language_with_a_user_sends_a_partial_identify",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setAppLanguage": "de"
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "set_app_language_before_identify_sends_an_anonymous_identify",
+          "steps": [
+            {
+              "setAppLanguage": "pt-BR"
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1",
+                "traits": {
+                  "plan": "pro"
+                }
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "traits": {
+                  "app_language": "pt-BR"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "anonymous_id": "$anon_a",
+                "traits": {
+                  "plan": "pro",
+                  "app_language": "pt-BR"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "identify_carries_the_stored_app_language_after_a_restart",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setAppLanguage": "de"
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1",
+                "traits": {
+                  "plan": "pro"
+                }
+              }
+            },
+            {
+              "restart": true
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "plan": "pro",
+                  "app_language": "de"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "caller_supplied_app_language_wins",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setAppLanguage": "de"
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1",
+                "traits": {
+                  "app_language": "fr"
+                }
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "app_language": "fr"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "invalid_app_language_is_ignored_and_keeps_the_stored_value",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setAppLanguage": "de"
+            },
+            {
+              "setAppLanguage": "not a language!"
+            },
+            {
+              "setAppLanguage": ""
+            },
+            {
+              "setAppLanguage": "-de"
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "underscore_is_changed_to_a_hyphen",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setAppLanguage": " pt_BR "
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "app_language": "pt-BR"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "same_app_language_again_sends_nothing",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setAppLanguage": "de"
+            },
+            {
+              "setAppLanguage": "de"
+            },
+            {
+              "restart": true
+            },
+            {
+              "setAppLanguage": "de"
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "null_clears_the_stored_app_language_and_sends_nothing",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setAppLanguage": "de"
+            },
+            {
+              "setAppLanguage": null
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            }
+          ]
+        },
+        {
+          "name": "app_language_is_kept_across_reset",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setAppLanguage": "de"
+            },
+            {
+              "reset": true
+            },
+            {
+              "identify": {
+                "externalUserId": "user_2"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_2",
+                "traits": {
+                  "app_language": "de"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "set_app_language_while_opted_out_sends_nothing",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "optOut": true
+            },
+            {
+              "setAppLanguage": "de"
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "anonymousPush": {
+      "description": "C3 anonymous push token lane (SPEC.md -> Push tokens). setPushToken before identify() sends an anonymous identify {anonymous_id, channels: [push]} right away (the SDK creates the handle on first need). The dedupe pair is (subject, token), where subject is the user id or the anonymous id. identify() attaches a token registered under the handle. reset() with a known token opts it out under the old subject, rotates the handle, and opts it in under the new handle. optOut() opts an anonymous token out under the handle. These cases have no device block, so no token fields are detected.",
+      "appliesTo": [
+        "mobile"
+      ],
+      "supersedes": [
+        "push.json:set_push_token_before_identify_buffers",
+        "push.json:opt_out_drops_a_token_buffered_before_identify",
+        "push.json:reset_clears_push_dedupe_then_reregisters"
+      ],
+      "cases": [
+        {
+          "name": "set_push_token_before_identify_sends_an_anonymous_identify",
+          "steps": [
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1",
+                "traits": {
+                  "plan": "pro"
+                }
+              }
+            },
+            {
+              "setPushToken": "fcm_tok_a"
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "anonymous_id": "$anon_a",
+                "traits": {
+                  "plan": "pro"
+                },
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "same_token_before_identify_dedupes_across_a_restart",
+          "steps": [
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "restart": true
+            },
+            {
+              "setPushToken": "fcm_tok_a"
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "rotation_before_identify_opts_out_the_old_token_under_the_handle",
+          "steps": [
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "setPushToken": "fcm_tok_b"
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": false
+                  },
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_b",
+                    "opted_in": true
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "reset_moves_the_token_to_a_new_anonymous_handle",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "reset": true
+            },
+            {
+              "identify": {
+                "externalUserId": "user_2"
+              }
+            },
+            {
+              "setPushToken": "fcm_tok_a"
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": false
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_2",
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "reset_before_identify_moves_the_token_to_a_new_handle",
+          "steps": [
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "reset": true
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": false
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_b",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "opt_out_opts_an_anonymous_token_out_under_the_handle",
+          "steps": [
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "optOut": true
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": false
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "token_before_identify_while_opted_out_sends_nothing",
+          "steps": [
+            {
+              "optOut": true
+            },
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            }
+          ],
+          "expectedRequests": []
+        },
+        {
+          "name": "reset_while_opted_out_sends_nothing",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "optOut": true
+            },
+            {
+              "reset": true
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": false
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "token_held_while_denied_before_identify_opts_in_under_the_handle_on_regrant",
+          "steps": [
+            {
+              "pushPermission": "denied"
+            },
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "pushPermission": "authorized"
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "token_held_while_denied_is_not_attached_by_identify",
+          "steps": [
+            {
+              "pushPermission": "denied"
+            },
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "pushPermission": "authorized"
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "reset_with_a_token_held_while_denied_sends_nothing",
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "pushPermission": "denied"
+            },
+            {
+              "reset": true
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "pushRegistration": {
+      "description": "C4 push contract v2 (SPEC.md -> Token fields, Re-registration). With environment detection on (a device block), every opted-in push entry carries kind (explicit in the step), platform ($platform, the SDK's own value), client_app_id, provider_project (not for apns), and push_env (apns only). The opt-out entry of a rotated token carries only channel, address and opted_in. The SDK re-sends the same token for the same subject when setPushToken is called and the pair was delivered 7 days (168 hours) ago or more (injected clock); the pair stores sent_at. An SDK whose token kind is fixed (Swift: apns) runs only the cases whose kind it produces.",
+      "appliesTo": [
+        "mobile"
+      ],
+      "supersedes": [],
+      "cases": [
+        {
+          "name": "fcm_token_carries_platform_client_app_id_and_provider_project",
+          "device": {
+            "clientAppId": "com.example.app",
+            "providerProject": "example-project"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setPushToken": {
+                "token": "fcm_tok_a",
+                "kind": "fcm"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true,
+                    "kind": "fcm",
+                    "platform": "$platform",
+                    "client_app_id": "com.example.app",
+                    "provider_project": "example-project"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "apns_token_carries_push_env_and_no_provider_project",
+          "device": {
+            "clientAppId": "com.example.app",
+            "providerProject": "example-project",
+            "pushEnv": "sandbox"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setPushToken": {
+                "token": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+                "kind": "apns"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+                    "opted_in": true,
+                    "kind": "apns",
+                    "platform": "$platform",
+                    "push_env": "sandbox",
+                    "client_app_id": "com.example.app"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "expo_token_carries_the_eas_project_as_provider_project",
+          "device": {
+            "clientAppId": "com.example.app",
+            "providerProject": "0b9e7c2a-5d1f-4e3a-9c8b-7a6f5e4d3c2b"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setPushToken": {
+                "token": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
+                "kind": "expo"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
+                    "opted_in": true,
+                    "kind": "expo",
+                    "platform": "$platform",
+                    "client_app_id": "com.example.app",
+                    "provider_project": "0b9e7c2a-5d1f-4e3a-9c8b-7a6f5e4d3c2b"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "unknown_token_fields_are_omitted",
+          "device": {},
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setPushToken": {
+                "token": "fcm_tok_a",
+                "kind": "fcm"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true,
+                    "kind": "fcm",
+                    "platform": "$platform"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "anonymous_token_carries_the_v2_fields",
+          "device": {
+            "clientAppId": "com.example.app",
+            "providerProject": "example-project"
+          },
+          "steps": [
+            {
+              "setPushToken": {
+                "token": "fcm_tok_a",
+                "kind": "fcm"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true,
+                    "kind": "fcm",
+                    "platform": "$platform",
+                    "client_app_id": "com.example.app",
+                    "provider_project": "example-project"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "rotation_opt_out_entry_carries_only_channel_address_and_opted_in",
+          "device": {
+            "clientAppId": "com.example.app",
+            "providerProject": "example-project"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setPushToken": {
+                "token": "fcm_tok_a",
+                "kind": "fcm"
+              }
+            },
+            {
+              "setPushToken": {
+                "token": "fcm_tok_b",
+                "kind": "fcm"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true,
+                    "kind": "fcm",
+                    "platform": "$platform",
+                    "client_app_id": "com.example.app",
+                    "provider_project": "example-project"
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": false
+                  },
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_b",
+                    "opted_in": true,
+                    "kind": "fcm",
+                    "platform": "$platform",
+                    "client_app_id": "com.example.app",
+                    "provider_project": "example-project"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "same_token_is_sent_again_after_seven_days",
+          "device": {
+            "clientAppId": "com.example.app",
+            "providerProject": "example-project"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setPushToken": {
+                "token": "fcm_tok_a",
+                "kind": "fcm"
+              }
+            },
+            {
+              "advanceClock": {
+                "hours": 167
+              }
+            },
+            {
+              "setPushToken": {
+                "token": "fcm_tok_a",
+                "kind": "fcm"
+              }
+            },
+            {
+              "advanceClock": {
+                "hours": 1
+              }
+            },
+            {
+              "setPushToken": {
+                "token": "fcm_tok_a",
+                "kind": "fcm"
+              }
+            },
+            {
+              "setPushToken": {
+                "token": "fcm_tok_a",
+                "kind": "fcm"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true,
+                    "kind": "fcm",
+                    "platform": "$platform",
+                    "client_app_id": "com.example.app",
+                    "provider_project": "example-project"
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true,
+                    "kind": "fcm",
+                    "platform": "$platform",
+                    "client_app_id": "com.example.app",
+                    "provider_project": "example-project"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "re_registration_uses_the_persisted_sent_at_after_a_restart",
+          "device": {
+            "clientAppId": "com.example.app",
+            "providerProject": "example-project"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setPushToken": {
+                "token": "fcm_tok_a",
+                "kind": "fcm"
+              }
+            },
+            {
+              "advanceClock": {
+                "hours": 200
+              }
+            },
+            {
+              "restart": true
+            },
+            {
+              "setPushToken": {
+                "token": "fcm_tok_a",
+                "kind": "fcm"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true,
+                    "kind": "fcm",
+                    "platform": "$platform",
+                    "client_app_id": "com.example.app",
+                    "provider_project": "example-project"
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true,
+                    "kind": "fcm",
+                    "platform": "$platform",
+                    "client_app_id": "com.example.app",
+                    "provider_project": "example-project"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "same_token_within_seven_days_after_a_restart_is_not_sent",
+          "device": {
+            "clientAppId": "com.example.app",
+            "providerProject": "example-project"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "setPushToken": {
+                "token": "fcm_tok_a",
+                "kind": "fcm"
+              }
+            },
+            {
+              "advanceClock": {
+                "hours": 100
+              }
+            },
+            {
+              "restart": true
+            },
+            {
+              "setPushToken": {
+                "token": "fcm_tok_a",
+                "kind": "fcm"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true,
+                    "kind": "fcm",
+                    "platform": "$platform",
+                    "client_app_id": "com.example.app",
+                    "provider_project": "example-project"
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "versionContext": {
+      "description": "C5 version keys in context (SPEC.md -> Version context). With environment detection on, every client event carries app_version, app_build, platform, sdk_name and sdk_version in context. No value, no key. The SDK never puts locale in context, even when it knows the device locale (it still sends the locale trait on identify).",
+      "appliesTo": [
+        "mobile",
+        "web"
+      ],
+      "supersedes": [],
+      "cases": [
+        {
+          "name": "custom_event_carries_the_version_keys_in_context",
+          "device": {
+            "appVersion": "1.4.0",
+            "appBuild": "140",
+            "locale": "de-DE"
+          },
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "track": {
+                "eventType": "feature_used",
+                "properties": {
+                  "source": "menu"
+                }
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "traits": {
+                  "locale": "de-DE"
+                }
+              }
+            },
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "external_user_id": "user_1",
+                  "event_type": "feature_used",
+                  "properties": {
+                    "source": "menu"
+                  },
+                  "context": {
+                    "app_version": "1.4.0",
+                    "app_build": "140",
+                    "platform": "$platform",
+                    "sdk_name": "$sdk_name",
+                    "sdk_version": "$sdk_version"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "version_keys_the_runtime_cannot_supply_are_omitted",
+          "device": {},
+          "steps": [
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "track": {
+                "eventType": "feature_used"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1"
+              }
+            },
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "external_user_id": "user_1",
+                  "event_type": "feature_used",
+                  "properties": {},
+                  "context": {
+                    "platform": "$platform",
+                    "sdk_name": "$sdk_name",
+                    "sdk_version": "$sdk_version"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "serverVersionContext": {
+      "description": "C5 for server SDKs. Every event carries context.sdk_name and context.sdk_version, and context.app_version only when the caller configures a release version. Never platform, app_build or locale. There is no device block: a server SDK has no device.",
+      "appliesTo": [
+        "server"
+      ],
+      "supersedes": [],
+      "cases": [
+        {
+          "name": "server_event_carries_sdk_name_and_sdk_version",
+          "steps": [
+            {
+              "track": {
+                "externalUserId": "user_1",
+                "eventType": "payment_failed",
+                "properties": {
+                  "amount_cents": 4900
+                }
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "external_user_id": "user_1",
+                  "event_type": "payment_failed",
+                  "properties": {
+                    "amount_cents": 4900
+                  },
+                  "context": {
+                    "sdk_name": "$sdk_name",
+                    "sdk_version": "$sdk_version"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "server_event_carries_the_configured_release_as_app_version",
+          "config": {
+            "release": "2026.10.1"
+          },
+          "steps": [
+            {
+              "track": {
+                "externalUserId": "user_1",
+                "eventType": "payment_failed"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "external_user_id": "user_1",
+                  "event_type": "payment_failed",
+                  "properties": {},
+                  "context": {
+                    "app_version": "2026.10.1",
+                    "sdk_name": "$sdk_name",
+                    "sdk_version": "$sdk_version"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/v2.schema.json",
+  "title": "Whisperr SDK contract v2 conformance cases",
+  "description": "Flows added by SDK contract v2 (SPEC.md -> Contract v2 conformance). Each named section is opt-in: an SDK runs a section when it implements that feature, and then skips the legacy cases the section lists in supersedes.",
+  "type": "object",
+  "required": ["version", "sections"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1 },
+    "description": { "type": "string" },
+    "sections": {
+      "type": "object",
+      "required": ["restoreIdentify", "appLanguage", "anonymousPush", "pushRegistration", "versionContext", "serverVersionContext"],
+      "additionalProperties": false,
+      "properties": {
+        "restoreIdentify": { "$ref": "#/$defs/section" },
+        "appLanguage": { "$ref": "#/$defs/section" },
+        "anonymousPush": { "$ref": "#/$defs/section" },
+        "pushRegistration": { "$ref": "#/$defs/section" },
+        "versionContext": { "$ref": "#/$defs/section" },
+        "serverVersionContext": { "$ref": "#/$defs/section" }
+      }
+    }
+  },
+  "$defs": {
+    "section": {
+      "type": "object",
+      "required": ["description", "appliesTo", "supersedes", "cases"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "appliesTo": {
+          "description": "Which SDKs run this section. mobile = Swift, Flutter, React Native (and Expo); web = browser SDKs; server = Node, Python, PHP, .NET.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["mobile", "web", "server"] }
+        },
+        "supersedes": {
+          "description": "Legacy cases whose expected requests contradict this section. An SDK that runs this section skips them. Format: <fixture file>:<case name>.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^(push|anonymous|automatic|wire)\\.json:[a-z0-9_]+$" }
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/case" }
+        }
+      }
+    },
+    "case": {
+      "type": "object",
+      "required": ["name", "steps", "expectedRequests"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$" },
+        "device": { "$ref": "#/$defs/device" },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "release": {
+              "description": "Server SDKs: the release version the caller configures. It becomes context.app_version.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/step" }
+        },
+        "expectedRequests": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/request" }
+        }
+      }
+    },
+    "device": {
+      "description": "Environment values the harness injects. When a case has a device block, the SDK's environment detection is ON and reads only these values: a missing key means the runtime cannot supply that value. When a case has no device block, environment detection is OFF (no device default traits, no version context keys, no detected push token fields), as in the legacy harnesses. platform, sdk_name and sdk_version are fixed by the SDK under test and appear as placeholders.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "appVersion": { "type": "string", "minLength": 1 },
+        "appBuild": { "type": "string", "minLength": 1 },
+        "locale": { "type": "string", "minLength": 1 },
+        "timezone": { "type": "string", "minLength": 1 },
+        "timezoneOffsetMinutes": { "type": "integer", "minimum": -720, "maximum": 840 },
+        "clientAppId": { "type": "string", "minLength": 1 },
+        "providerProject": { "type": "string", "minLength": 1 },
+        "pushEnv": { "enum": ["production", "sandbox"] }
+      },
+      "not": { "required": ["timezone", "timezoneOffsetMinutes"] }
+    },
+    "identifyStep": {
+      "type": "object",
+      "required": ["externalUserId"],
+      "additionalProperties": false,
+      "properties": {
+        "externalUserId": { "type": "string", "minLength": 1 },
+        "traits": { "type": "object" },
+        "pushToken": { "type": "string" }
+      }
+    },
+    "step": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "identify": { "$ref": "#/$defs/identifyStep" },
+        "track": {
+          "description": "track(eventType, properties). Server SDKs pass externalUserId; client SDKs use the current user.",
+          "type": "object",
+          "required": ["eventType"],
+          "additionalProperties": false,
+          "properties": {
+            "externalUserId": { "type": "string", "minLength": 1 },
+            "eventType": { "type": "string", "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$" },
+            "properties": { "type": "object" }
+          }
+        },
+        "setPushToken": {
+          "description": "String form: setPushToken(token) with no explicit token fields. Object form: the SDK's API with these explicit fields. An explicit field wins over a detected one.",
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["token"],
+              "additionalProperties": false,
+              "properties": {
+                "token": { "type": "string" },
+                "kind": { "$ref": "push.schema.json#/$defs/pushKind" },
+                "platform": { "$ref": "push.schema.json#/$defs/pushPlatform" },
+                "pushEnv": { "$ref": "push.schema.json#/$defs/pushEnv" },
+                "clientAppId": { "type": "string", "minLength": 1 },
+                "providerProject": { "type": "string", "minLength": 1 }
+              }
+            }
+          ]
+        },
+        "setAppLanguage": {
+          "description": "setAppLanguage(tag). null clears the stored value.",
+          "type": ["string", "null"]
+        },
+        "restart": {
+          "description": "true: tear down the client and build a fresh one on the SAME storage (an app relaunch). Object form: build the client and call identify() in the same synchronous tick, before the SDK yields or flushes.",
+          "oneOf": [
+            { "const": true },
+            {
+              "type": "object",
+              "required": ["thenIdentify"],
+              "additionalProperties": false,
+              "properties": {
+                "thenIdentify": { "$ref": "#/$defs/identifyStep" }
+              }
+            }
+          ]
+        },
+        "reset": { "const": true },
+        "optOut": { "const": true },
+        "optIn": { "const": true },
+        "pushPermission": { "enum": ["authorized", "provisional", "denied", "not_determined"] },
+        "advanceClock": {
+          "description": "Move the SDK's injected wall clock forward. Persisted timestamps (restore identify throttle, push re-registration) use this clock.",
+          "type": "object",
+          "required": ["hours"],
+          "additionalProperties": false,
+          "properties": {
+            "hours": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "setDevice": {
+          "description": "From now on the platform reports these values instead (the whole block is replaced).",
+          "$ref": "#/$defs/device"
+        }
+      }
+    },
+    "request": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["endpoint", "body"],
+          "additionalProperties": false,
+          "properties": {
+            "endpoint": { "const": "/v1/identify" },
+            "body": {
+              "description": "The identify body. Validated against wire.schema.json#/$defs/identify_body after placeholder substitution (schema-validation.test.mjs).",
+              "type": "object"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["endpoint", "events"],
+          "additionalProperties": false,
+          "properties": {
+            "endpoint": { "const": "/v1/events/batch" },
+            "events": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/event" }
+            }
+          }
+        }
+      ]
+    },
+    "event": {
+      "description": "An event as serialized, minus occurred_at. context, when present, lists the governed context keys (SPEC.md -> Version context) the event must carry; a governed key not listed must be absent. Without context, the harness checks only that context carries $message_id.",
+      "type": "object",
+      "required": ["event_type", "properties"],
+      "additionalProperties": false,
+      "properties": {
+        "external_user_id": { "type": "string", "minLength": 1 },
+        "anonymous_id": { "type": "string", "pattern": "^\\$anon_[a-z0-9]+$" },
+        "event_type": { "type": "string", "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$" },
+        "properties": { "type": "object" },
+        "context": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "app_version": { "type": "string", "minLength": 1 },
+            "app_build": { "type": "string", "minLength": 1 },
+            "platform": { "const": "$platform" },
+            "sdk_name": { "const": "$sdk_name" },
+            "sdk_version": { "const": "$sdk_version" }
+          }
+        }
+      }
+    }
+  }
+}

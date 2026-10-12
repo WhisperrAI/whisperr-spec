@@ -26,6 +26,25 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/case" }
+    },
+    "pushEventsV2": {
+      "description": "Contract v2 push-event flows (push_received, the v2 push_opened properties). Opt-in: an SDK that runs them skips the legacy cases listed in supersedes.",
+      "type": "object",
+      "required": ["description", "supersedes", "cases"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "supersedes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^automatic\\.json:[a-z0-9_]+$" }
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/case_v2" }
+        }
+      }
     }
   },
   "$defs": {
@@ -162,6 +181,93 @@
         "optIn": {
           "description": "The app calls the SDK's opt-in API.",
           "const": true
+        }
+      }
+    },
+    "case_v2": {
+      "type": "object",
+      "required": ["name", "device", "steps", "expectedEvents"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "storage": { "enum": ["empty", "legacy_sdk_state"] },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "automaticEvents": { "type": "boolean" }
+          }
+        },
+        "device": { "$ref": "#/$defs/device" },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/step_v2" }
+        },
+        "expectedEvents": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/expected_event_v2" }
+        }
+      }
+    },
+    "step_v2": {
+      "description": "The legacy steps except pushOpened, plus receivePush and openPush.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "launch": { "$ref": "#/$defs/step/properties/launch" },
+        "background": { "$ref": "#/$defs/after" },
+        "foreground": { "$ref": "#/$defs/after" },
+        "terminate": { "const": true },
+        "screen": { "type": "string", "minLength": 1 },
+        "pushPermission": { "enum": ["authorized", "provisional", "denied", "not_determined"] },
+        "reset": { "const": true },
+        "optOut": { "const": true },
+        "optIn": { "const": true },
+        "receivePush": {
+          "description": "The device receives a push with this data payload on the receipt path named by source.",
+          "type": "object",
+          "required": ["data", "source", "foreground"],
+          "additionalProperties": false,
+          "properties": {
+            "data": { "type": "object" },
+            "source": { "enum": ["foreground", "nse", "android_service", "expo_task"] },
+            "foreground": { "type": "boolean" }
+          }
+        },
+        "openPush": {
+          "description": "The user opens a notification with this data payload. actionId absent means a tap on the notification body.",
+          "type": "object",
+          "required": ["data", "launchedApp"],
+          "additionalProperties": false,
+          "properties": {
+            "data": { "type": "object" },
+            "actionId": { "type": "string", "minLength": 1 },
+            "launchedApp": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "expected_event_v2": {
+      "description": "As expected_event, plus an optional context that lists the governed context keys the event must carry.",
+      "type": "object",
+      "required": ["event_type", "properties"],
+      "additionalProperties": false,
+      "properties": {
+        "event_type": { "$ref": "#/$defs/event_type" },
+        "properties": { "$ref": "#/$defs/expected_event/properties/properties" },
+        "context": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "app_version": { "type": "string", "minLength": 1 },
+            "app_build": { "type": "string", "minLength": 1 },
+            "platform": { "const": "$platform" },
+            "sdk_name": { "const": "$sdk_name" },
+            "sdk_version": { "const": "$sdk_version" }
+          }
         }
       }
     },
