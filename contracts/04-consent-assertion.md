@@ -74,10 +74,22 @@ enqueueing an intervention and sending it must block the send. This is a timing 
 ## Relationship to the SDK `channels[]` field
 
 `SPEC.md`'s `identify.channels[].opted_in` is the customer declaring consent from their own
-records — `basis: customer_declared`. That is an assertion, not an inference, and it remains
-valid under 2.0.0 with no SDK change. `opted_in` defaults to `true` there because the customer is
-actively supplying the channel; a channel Whisperr merely *observed* on a webhook gets no
-assertion at all.
+records — `basis: customer_declared`. That is an assertion, not an inference. Only an identify
+made with the **server key** can assert `opted_in: true` (or `verified: true`) for an `email` or
+`sms` channel: anyone can read a publishable key from an app, so the server stores an `email` or
+`sms` channel sent with it as pending (unverified, not opted in), and records no assertion for
+it. The request still succeeds. Either key can assert an opt-out (`opted_in: false`). A later
+server-key identify of a pending address confirms it; for `email` an omitted `opted_in` is
+enough, but an `sms` channel without `opted_in` is never opted in. Push tokens follow the
+device permission (`SPEC.md`, "Push permission and the token"). A channel Whisperr merely
+*observed* on a webhook gets no assertion at all.
+
+The customer's backend can also record an assertion directly with
+`POST /v1/consent/assertions` (server key only; `origin: customer_backend`, basis
+`customer_declared` or `explicit_user_action`). It records consent proof or an opt-out. It does
+not change the address itself, so it cannot confirm a pending address alone: the engine also
+needs the address opted in and verified, which only a server-key identify (or tracked
+`user.channels`) does. A pending address never overrides an assertion that arrived first.
 
 ## Invariants
 
