@@ -106,8 +106,16 @@ PostHog project key, not a secret.
     `channel`, not `type`** (a common SDK mistake; the server rejects unknown
     fields, so `type` 400s the whole request).
   - `address` (string, required).
-  - `opted_in` (bool) — defaults to `true`.
-  - `verified` (bool, optional) — omit unless set.
+  - `opted_in` (bool, optional) — the customer's consent for this address.
+    `false` records an opt-out with any key. Only a request made with the
+    **server key** (`wrk_…`) can set `true`. With the publishable key
+    (`wpk_…`), the server stores an `email` or `sms` address as not opted in
+    and ignores `true`. An `sms` channel without `opted_in` is not opted in,
+    for any key. A `push` token follows the device permission: see
+    [Push permission and the token](#push-permission-and-the-token).
+  - `verified` (bool, optional) — omit unless set. Only the server key can set
+    `true`. With the publishable key, the server stores an `email` or `sms`
+    address as unverified.
   - `kind` (string, optional, `push` only) — `fcm` | `apns` | `expo` |
     `onesignal_sub`. The token type. See [Token kind](#token-kind).
   - `platform` (string, optional, `push` only) — `ios` | `android` | `web` |
@@ -116,7 +124,12 @@ PostHog project key, not a secret.
     APNs environment of the token.
 
 Convenience shortcuts in the SDK APIs (`email` / `phone` / `pushToken`) expand to
-opted-in `email` / `sms` / `push` channels respectively.
+`email` / `sms` / `push` channels respectively. In a client SDK they run with the
+publishable key, so they do not grant email or SMS consent, and the `phone`
+shortcut never grants SMS consent. Consent must be confirmed from the backend
+with the server key: a server-SDK `identify()` with `opted_in` / `verified`, or
+`POST /v1/consent/assertions` (see
+[`contracts/04`](contracts/04-consent-assertion.md)).
 
 ### Reserved trait keys
 
