@@ -979,6 +979,13 @@ instant, so the 24-hour throttle and the 7-day re-registration never change a
 legacy expectation. (A legacy restart of a stored user within 24 hours, with
 the same restore traits, sends no restore identify.)
 
+**Permission events.** A `pushPermission` step is an explicit report through
+the SDK's permission API, so the SDK sends `push_permission_changed` even with
+automatic events off. `v2.json` expects it, and compares it as
+`automatic.json` does (without identity fields and `context`). The harness
+compares identify bodies and events as two ordered lists; it does not compare
+the order between an identify and an event.
+
 **Anonymous handle.** On an identify body that carries `external_user_id`,
 the v2 harness ignores `anonymous_id` when the expected body does not name it,
 because an SDK may hold a handle for its anonymous event lane. A harness for

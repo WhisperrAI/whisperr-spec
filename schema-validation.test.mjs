@@ -140,7 +140,9 @@ test('v2 expected requests are valid wire bodies after placeholder substitution'
           assert.ok(identify(substitute(request.body)), `${section}/${c.name}: ${ajv.errorsText(identify.errors)}`);
         } else {
           for (const e of request.events) {
-            const sent = substitute({ ...e, occurred_at: '2026-10-12T12:00:00.000Z', context: { $message_id: 'm1', ...(e.context ?? {}) } });
+            // Automatic events are compared without identity fields; give them one so the wire shape check applies.
+            const identity = 'external_user_id' in e || 'anonymous_id' in e ? {} : { external_user_id: 'user_1' };
+            const sent = substitute({ ...identity, ...e, occurred_at: '2026-10-12T12:00:00.000Z', context: { $message_id: 'm1', ...(e.context ?? {}) } });
             assert.ok(event(sent), `${section}/${c.name}: ${ajv.errorsText(event.errors)}`);
           }
         }
@@ -222,5 +224,27 @@ test('every superseded legacy case exists', () => {
   for (const ref of refs) {
     const [file, name] = ref.split(':');
     assert.ok(load(file).cases.some(c => c.name === name), ref);
+  }
+});
+
+test('every v2 permission report expects its push_permission_changed event', () => {
+  // SPEC.md: the off switch stops only the automatic read; an explicit report
+  // through the permission API always sends the event, also in v2.json, whose
+  // harness compares every request.
+  const v2 = JSON.parse(readFileSync(join(root, 'conformance/v2.json'), 'utf8'));
+  const automatic = JSON.parse(readFileSync(join(root, 'conformance/automatic.json'), 'utf8'));
+  const reserved = new Set(automatic.reserved.map(r => r.name));
+  for (const { cases } of Object.values(v2.sections)) {
+    for (const c of cases) {
+      const reports = c.steps.filter(s => 'pushPermission' in s).length;
+      const events = c.expectedRequests.flatMap(r => r.events ?? []);
+      const sent = events.filter(e => e.event_type === 'push_permission_changed');
+      if (reports === 0) assert.equal(sent.length, 0, c.name);
+      else assert.ok(sent.length > 0, `${c.name} reports a permission but expects no push_permission_changed`);
+      for (const e of events) {
+        if (!reserved.has(e.event_type)) continue;
+        assert.ok(!('external_user_id' in e) && !('anonymous_id' in e), `${c.name}: automatic events are compared without identity`);
+      }
+    }
   }
 });
