@@ -90,6 +90,23 @@ for c in auto.get("cases", []) + auto.get("pushEventsV2", {}).get("cases", []):
         if "timezone" in props and "timezone_offset_minutes" in props:
             err(f, f"{where}: timezone_offset_minutes is only a fallback; never send it with timezone")
 
+# ---------------------------------------------------------------- 3a. client email consent cases
+# Client SDKs run clientEmailConsent instead of the cases it supersedes, so a
+# superseded name must exist in cases, and a client case name must not shadow
+# one (an SDK keyed by name would run the wrong expectation).
+wire = docs.get("conformance/wire.json", {})
+client = wire.get("clientEmailConsent")
+if client:
+    f = "conformance/wire.json"
+    names = {c["name"] for c in wire.get("cases", [])}
+    for name in client.get("supersedes", []):
+        if name not in names: err(f, f"clientEmailConsent supersedes unknown case {name!r}")
+    for c in client.get("cases", []):
+        if c["name"] in names: err(f, f"clientEmailConsent case {c['name']!r} reuses a cases name")
+        for ch in c.get("expectedBody", {}).get("channels", []):
+            if "consent_source" in ch and (ch.get("channel") != "email" or ch.get("opted_in") is not True):
+                err(f, f"{c['name']}: consent_source goes only on an email channel with opted_in: true")
+
 # ---------------------------------------------------------------- 3c. contract v2 sections
 # A v2 section may supersede legacy cases. Each entry must name a legacy case
 # that exists, so an SDK never skips a case by a stale or misspelled name.

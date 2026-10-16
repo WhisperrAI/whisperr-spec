@@ -39,6 +39,8 @@ for (const [name, file, mutate] of [
   ['v2 supersedes entry without a fixture file', 'conformance/v2.json', d => { d.sections.anonymousPush.supersedes.push('set_push_token_before_identify_buffers'); }],
   ['v2 context with a literal platform', 'conformance/v2.json', d => { d.sections.versionContext.cases[0].expectedRequests[1].events[0].context.platform = 'ios'; }],
   ['push_received source outside the enum', 'conformance/automatic.json', d => { d.pushEventsV2.cases[0].steps[1].receivePush.source = 'background'; }],
+  ['consent_source outside the wire enum', 'conformance/wire.json', d => { d.clientEmailConsent.cases[1].expectedBody.channels[0].consent_source = 'app'; }],
+  ['track op in client email consent cases', 'conformance/wire.json', d => { d.clientEmailConsent.cases[0].op = 'track'; }],
   ['legacy pushOpened step in v2 automatic cases', 'conformance/automatic.json', d => { d.pushEventsV2.cases[0].steps.push({ pushOpened: { whisperr_message_id: 'm' } }); }],
 ]) {
   test(`validator rejects ${name}`, () => {

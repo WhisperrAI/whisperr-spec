@@ -145,16 +145,23 @@ a bad release or an old SDK. These `context` keys are **governed**:
     fields, so `type` 400s the whole request).
   - `address` (string, required).
   - `opted_in` (bool, optional) — the customer's consent for this address.
-    `false` records an opt-out with any key. Only a request made with the
-    **server key** (`wrk_…`) can opt an address in. With the publishable key
-    (`wpk_…`), the request still succeeds: the server stores a new `email` or
-    `sms` address as pending (unverified, not opted in), ignores `true`, and
-    leaves an existing address as it is. With the server key, an omitted
+    `false` records an opt-out with any key. By default only a request made
+    with the **server key** (`wrk_…`) can opt an address in. With the
+    publishable key (`wpk_…`), the request still succeeds: the server stores a
+    new `email` or `sms` address as pending (unverified, not opted in), ignores
+    `true`, and leaves an existing address as it is. The exception is email
+    under the app's client email consent setting
+    ([`contracts/04`](contracts/04-consent-assertion.md), "Client SDK
+    consent"). With the server key, an omitted
     `opted_in` opts in a new `email` address and confirms a pending one; an
     address that already holds a decision keeps it. An `sms` channel without
     `opted_in` is never opted in, for any key. A `push` token follows the
     device permission: see
     [Push permission and the token](#push-permission-and-the-token).
+  - `consent_source` (string, optional, `email` only) — `"user"` when the end
+    user agreed to email in the app. Client SDKs send it together with
+    `opted_in: true` for `emailOptedIn: true`, and never otherwise. The server
+    ignores any other value and never rejects a request for it.
   - `verified` (bool, optional) — omit unless set. Only the server key can
     verify an address; with it, an omitted `verified` counts as `true` unless
     the address was last declared `false`. With the publishable key, the
@@ -175,9 +182,17 @@ a bad release or an old SDK. These `context` keys are **governed**:
 
 Convenience shortcuts in the SDK APIs (`email` / `phone` / `pushToken`) expand to
 `email` / `sms` / `push` channels respectively. In a client SDK they run with the
-publishable key, so they do not grant email or SMS consent, and the `phone`
-shortcut never grants SMS consent. Consent must be confirmed from the backend
-with the server key: a server-SDK `identify()` (or a tracked event's
+publishable key and claim no consent: the `email` shortcut sends no `opted_in`,
+and the `phone` shortcut never grants SMS consent. A client SDK also takes
+`emailOptedIn` next to `email` (`identify(userId, { email, emailOptedIn })`, or
+the platform's idiom): `true` sends `opted_in: true` with
+`consent_source: "user"`, `false` sends `opted_in: false`, and omitted sends
+neither. Whether a client-sent email is opted in then follows the app's client
+email consent setting ([`contracts/04`](contracts/04-consent-assertion.md),
+"Client SDK consent"); an earlier opt-out, including the unsubscribe link, is
+kept. The `clientEmailConsent` section of `conformance/wire.json` pins these
+bodies. Otherwise consent must be confirmed from the backend with the server
+key: a server-SDK `identify()` (or a tracked event's
 `user.channels`) of the same address with `opted_in: true`, and `verified: true`
 for a confirmed email. `POST /v1/consent/assertions` records consent proof but
 does not confirm a pending address by itself (see
