@@ -116,5 +116,60 @@
         ]
       }
     }
-  ]
+  ],
+  "clientEmailConsent": {
+    "description": "Client SDKs (publishable key) run these cases instead of the cases named in supersedes; server SDKs ignore this section. A client SDK claims no email consent on the developer's behalf: the email shortcut sends no opted_in. emailOptedIn: true sends opted_in: true with consent_source: \"user\" (the end user agreed in the app); emailOptedIn: false sends opted_in: false. Whether the address is then opted in is the server's rule (contracts/04, \"Client SDK consent\").",
+    "supersedes": ["identify_email_shortcut"],
+    "cases": [
+      {
+        "name": "client_identify_email_shortcut",
+        "op": "identify",
+        "scenario": {
+          "externalUserId": "user_8842",
+          "traits": { "plan": "pro" },
+          "email": "ada@example.com"
+        },
+        "endpoint": "/v1/identify",
+        "expectedBody": {
+          "external_user_id": "user_8842",
+          "traits": { "plan": "pro" },
+          "channels": [
+            { "channel": "email", "address": "ada@example.com" }
+          ]
+        }
+      },
+      {
+        "name": "client_identify_email_opted_in",
+        "op": "identify",
+        "scenario": {
+          "externalUserId": "user_8842",
+          "email": "ada@example.com",
+          "emailOptedIn": true
+        },
+        "endpoint": "/v1/identify",
+        "expectedBody": {
+          "external_user_id": "user_8842",
+          "channels": [
+            { "channel": "email", "address": "ada@example.com", "opted_in": true, "consent_source": "user" }
+          ]
+        }
+      },
+      {
+        "name": "client_identify_email_opted_out",
+        "op": "identify",
+        "scenario": {
+          "externalUserId": "user_8842",
+          "email": "ada@example.com",
+          "emailOptedIn": false
+        },
+        "endpoint": "/v1/identify",
+        "expectedBody": {
+          "external_user_id": "user_8842",
+          "channels": [
+            { "channel": "email", "address": "ada@example.com", "opted_in": false }
+          ]
+        }
+      }
+    ]
+  }
 }

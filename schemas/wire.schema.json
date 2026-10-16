@@ -13,6 +13,26 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/case" }
+    },
+    "clientEmailConsent": {
+      "description": "Client SDK cases for the email shortcut and emailOptedIn (contracts/04, \"Client SDK consent\"). Client SDKs (publishable key) run these cases and skip the cases named in supersedes. Server SDKs ignore this section.",
+      "type": "object",
+      "required": ["supersedes", "cases"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string" },
+        "supersedes": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/case" },
+              { "properties": { "op": { "const": "identify" }, "expectedBody": { "$ref": "#/$defs/identify_body" } }, "required": ["expectedBody"] }
+            ]
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -94,7 +114,11 @@
         "channel": { "enum": ["email", "sms"] },
         "address": { "type": "string", "minLength": 1 },
         "opted_in": { "type": "boolean" },
-        "verified": { "type": "boolean" }
+        "verified": { "type": "boolean" },
+        "consent_source": {
+          "const": "user",
+          "description": "Email only, sent by client SDKs with opted_in: true when the end user agreed in the app (emailOptedIn: true). Under the app's per_user client email consent setting, only an email channel with both opts the address in. The server ignores any other value."
+        }
       }
     },
     "identify_body": {

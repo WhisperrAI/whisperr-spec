@@ -30,7 +30,7 @@ much other signal exists about them.
 | basis | meaning | who may assert |
 |---|---|---|
 | `explicit_user_action` | the person themselves acted (checkbox, preference centre, unsubscribe link) | any source that owns that interaction |
-| `customer_declared` | the customer asserts it on their user's behalf, from their own records | the customer's own SDK/backend/API |
+| `customer_declared` | the customer asserts it on their user's behalf, from their own records | the customer's own SDK/backend/API, or the app owner's client email consent answer (see [Client SDK consent](#client-sdk-consent)) |
 | `imported_record` | migrated from a prior system, with a pointer to the original record | import paths only |
 
 Anything not on this list is not consent.
@@ -63,7 +63,8 @@ its own channel and nothing else.
 3. An `opted_out` recorded by Whisperr's own delivery unsubscribe path is **sticky**: it can only
    be reversed by a later `explicit_user_action` opt-in. A `customer_declared` or
    `imported_record` opt-in cannot silently re-subscribe someone who unsubscribed from a Whisperr
-   message.
+   message. Neither can an assertion from the `client_sdk` origin, whatever its basis: anyone
+   holding the app's publishable key can send one.
 
 ## Checked immediately before dispatch
 
@@ -74,11 +75,12 @@ enqueueing an intervention and sending it must block the send. This is a timing 
 ## Relationship to the SDK `channels[]` field
 
 `SPEC.md`'s `identify.channels[].opted_in` is the customer declaring consent from their own
-records — `basis: customer_declared`. That is an assertion, not an inference. Only an identify
-made with the **server key** can assert `opted_in: true` (or `verified: true`) for an `email` or
-`sms` channel: anyone can read a publishable key from an app, so the server stores an `email` or
-`sms` channel sent with it as pending (unverified, not opted in), and records no assertion for
-it. The request still succeeds. Either key can assert an opt-out (`opted_in: false`). A later
+records — `basis: customer_declared`. That is an assertion, not an inference. By default only an
+identify made with the **server key** can assert `opted_in: true` (or `verified: true`) for an
+`email` or `sms` channel: anyone can read a publishable key from an app, so the server stores an
+`email` or `sms` channel sent with it as pending (unverified, not opted in), and records no
+assertion for it. The request still succeeds. The one exception is email under the app's client
+email consent setting: see [Client SDK consent](#client-sdk-consent). Either key can assert an opt-out (`opted_in: false`). A later
 server-key identify of a pending address confirms it; for `email` an omitted `opted_in` is
 enough, but an `sms` channel without `opted_in` is never opted in. Push tokens follow the
 device permission (`SPEC.md`, "Push permission and the token"). A channel Whisperr merely
@@ -91,10 +93,61 @@ not change the address itself, so it cannot confirm a pending address alone: the
 needs the address opted in and verified, which only a server-key identify (or tracked
 `user.channels`) does. A pending address never overrides an assertion that arrived first.
 
+## Client SDK consent
+
+An app with no backend (for example an Expo or React Native app on Firebase or Supabase) can only
+identify from the client, with the publishable key. Under the rule above it could never email its
+users. The app owner therefore answers one question per app: **"Does your signup get permission to
+email users?"** The answer is the app setting `client_email_consent`:
+
+| answer | value | an email channel sent with the publishable key |
+|---|---|---|
+| never answered | `null` | behaves as `off` |
+| No | `off` | is stored pending (the default rule above) |
+| Yes | `assumed` | is opted in, unless it carries `opted_in: false` |
+| Per user (the app asks) | `per_user` | is opted in only when it carries `opted_in: true` **and** `consent_source: "user"` |
+
+`consent_source: "user"` (`SPEC.md`, `<identify>`) is the client SDK saying that the end user
+agreed in the app (`emailOptedIn: true`). `opted_in: true` alone is not enough under `per_user`,
+because some released client SDKs send it by default.
+
+The app setting `email_requires_server_key = true` is the stricter mode and always wins: with it,
+a publishable key never opts an email in, whatever `client_email_consent` says.
+
+A grant from the publishable key:
+
+- applies only to a **new or pending** address. It never re-opts-in an address that holds a
+  decision: an opt-out from the app (`opted_in: false`), the unsubscribe link, or a suppression
+  after a bounce or complaint. An earlier opt-out, including the unsubscribe link, is kept.
+- stores the address verified, so it can receive email.
+- records an assertion with origin `client_sdk`, basis `customer_declared` (`assumed`) or
+  `explicit_user_action` (`per_user`). A `client_sdk` assertion only ever opts in, and it never
+  clears a Whisperr-side unsubscribe (see Resolution, rule 3). Only the server key or the end
+  user through Whisperr can lift one.
+- never applies to `sms`. Phone numbers from the client stay pending.
+
+Abuse limits, for the publishable key only. A refused grant stores the address pending; the
+request still succeeds (2xx).
+
+1. An existing email on a user cannot be changed without the server key (403
+   `contact_change_requires_server_key`, unchanged).
+2. One address, one user: if another user of the app already holds the address opted in, the
+   grant is refused (`client_consent_address_taken`). Addresses compare trimmed and
+   case-insensitively.
+3. A rate limit on new client-granted addresses per app (default 200 per rolling hour). Over it
+   the grant is refused (`client_consent_rate_limited`); a later identify of the same address
+   retries it.
+4. A hard bounce or a spam complaint suppresses the address automatically, and a complaint or
+   unsubscribe also records the sticky `delivery_unsubscribe` opt-out.
+5. Every email carries an unsubscribe link.
+
 ## Invariants
 
 1. `unknown` blocks delivery. (invariant test)
 2. No auth, billing, or commerce event ever creates an assertion. (negative fixture, each)
 3. A source cannot assert consent for a channel it does not own.
 4. Consent is evaluated immediately before dispatch, not at enqueue.
-5. A Whisperr-side unsubscribe cannot be reversed except by `explicit_user_action`.
+5. A Whisperr-side unsubscribe cannot be reversed except by `explicit_user_action`, and never by
+   the `client_sdk` origin.
+6. A publishable key opts an email in only under the app's `client_email_consent` setting, only
+   for a new or pending address, and never for `sms`.
