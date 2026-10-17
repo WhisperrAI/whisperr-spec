@@ -1094,8 +1094,10 @@ them and stays conformant to v1.
    `track`, `trackError`, `uncaughtError`) and config (`captureErrors`,
    `debugBuild`). A v3 SDK keeps running the legacy `cases` and
    `pushEventsV2`, but first drops the events in `signalsV3.legacyStrip.events`
-   and removes the `legacyStrip.properties` keys from what it sent. The
-   harness rules are in the `signalsV3` description.
+   and removes each `legacyStrip.properties` key from a sent event only when
+   the expected event does not name that key (legacy `push_opened` and
+   `push_received` cases expect `whisperr_message_id`). The harness rules are
+   in the `signalsV3` description.
 
 **Environment switch.** Every v2 harness can turn the SDK's environment
 detection on or off: device default traits (`timezone`, `locale`), the
