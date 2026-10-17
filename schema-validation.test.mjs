@@ -41,6 +41,10 @@ for (const [name, file, mutate] of [
   ['push_received source outside the enum', 'conformance/automatic.json', d => { d.pushEventsV2.cases[0].steps[1].receivePush.source = 'background'; }],
   ['consent_source outside the wire enum', 'conformance/wire.json', d => { d.clientEmailConsent.cases[1].expectedBody.channels[0].consent_source = 'app'; }],
   ['track op in client email consent cases', 'conformance/wire.json', d => { d.clientEmailConsent.cases[0].op = 'track'; }],
+  ['v3 event without a session_id context', 'conformance/automatic.json', d => { delete d.signalsV3.sections.sessionsAndCounters.cases[0].expectedEvents[0].context; }],
+  ['v3 launch with a url and an app version', 'conformance/automatic.json', d => { d.signalsV3.sections.launchSource.cases[0].steps[0].launch.url = 'https://a.example/'; }],
+  ['v3 trackError kind outside the enum', 'conformance/automatic.json', d => { d.signalsV3.sections.errors.cases[0].steps[1].trackError.kind = 'js'; }],
+  ['v3 fingerprint vector that is not hex', 'conformance/automatic.json', d => { d.signalsV3.fingerprintVectors[0].fingerprint = 'CartLoadError'; }],
   ['legacy pushOpened step in v2 automatic cases', 'conformance/automatic.json', d => { d.pushEventsV2.cases[0].steps.push({ pushOpened: { whisperr_message_id: 'm' } }); }],
 ]) {
   test(`validator rejects ${name}`, () => {

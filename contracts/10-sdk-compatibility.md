@@ -83,6 +83,18 @@ Nothing below is required. An SDK that implements none of it stays fully conform
   `push_received`. Each feature is an opt-in section; an SDK that implements none of it stays
   conformant to v1.
 
+- **Signals v3** ([`SPEC.md`](../SPEC.md) → Engagement signals; executable in
+  `automatic.json` → `signalsV3`), client SDKs only. A v3 client SDK **must** send
+  `context.session_id` on every event, `launch_source` on every `app_opened`, and the per-visit
+  counters on every `app_backgrounded`. It adds the reserved `app_error` (uncaught errors and the
+  public `trackError(error, {screen?, kind?})`, at most one per fingerprint and 20 per session,
+  turned off by `captureErrors: false`) and, on mobile, `app_crashed` (unclean-shutdown flag,
+  upgraded by a recorded fatal; never in a debug build). All of it is new keys in free-form
+  `context` / `properties` plus two new reserved names, so it is a *minor* SDK bump. **Release
+  order:** this spec, then the server that reserves `app_error` and `app_crashed` (an older server
+  treats them as unregistered codes), then SDK releases. An SDK that implements none of it stays
+  conformant.
+
 The first two are `context` keys, and `context` is already free-form in v1; `anonymous_id` is an
 optional top-level field the server accepts alongside `external_user_id` — so adding any of them
 is a *minor* version bump, not a breaking one.

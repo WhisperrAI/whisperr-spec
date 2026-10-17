@@ -135,8 +135,51 @@
       "properties": {
         "cold_start": {
           "type": "boolean",
-          "required": true,
-          "description": "true for the first foreground of the process, false for a return from the background."
+          "required": false,
+          "requiredIn": ["mobile"],
+          "description": "true for the first foreground of the process, false for a return from the background. Every mobile SDK sends it; a browser SDK omits it."
+        },
+        "launch_source": {
+          "type": "string",
+          "required": false,
+          "enum": ["push", "deep_link", "universal_link", "widget", "shortcut", "email", "direct"],
+          "requiredIn": ["signalsV3"],
+          "description": "Signals v3. What brought the user into the app. Precedence when several signals arrive: push, shortcut, widget, email, universal_link, deep_link, direct. A link whose query carries wsrc=widget or wsrc=shortcut is that source; a link carrying wmid is email. Required from SDKs that run signalsV3."
+        },
+        "whisperr_message_id": {
+          "type": "string",
+          "required": false,
+          "description": "Signals v3. At most 128 characters. Only for launch_source push (from the notification data) or email (the wmid link parameter)."
+        },
+        "link_route": {
+          "type": "string",
+          "required": false,
+          "description": "Signals v3. At most 256 characters. The path of the link that won, never the query or fragment. A segment that is all digits, a UUID, or 16 characters or longer becomes :id. A custom-scheme link has no host: its route is / plus everything between scheme:// and the query."
+        },
+        "link_host": {
+          "type": "string",
+          "required": false,
+          "description": "Signals v3. The host of an http(s) link (universal link, Android app link, web landing URL). Never for a custom scheme."
+        },
+        "utm_source": {
+          "type": "string",
+          "required": false,
+          "description": "Signals v3. At most 128 characters. Copied from the link only when present."
+        },
+        "utm_medium": {
+          "type": "string",
+          "required": false,
+          "description": "Signals v3. At most 128 characters. Copied from the link only when present."
+        },
+        "utm_campaign": {
+          "type": "string",
+          "required": false,
+          "description": "Signals v3. At most 128 characters. Copied from the link only when present."
+        },
+        "first_after_update": {
+          "type": "boolean",
+          "required": false,
+          "description": "Signals v3, optional. true on the first app_opened after app_updated; omitted otherwise."
         }
       }
     },
@@ -150,6 +193,36 @@
           "type": "integer",
           "required": true,
           "description": "Milliseconds since the matching app_opened."
+        },
+        "session_id": {
+          "type": "string",
+          "required": false,
+          "requiredIn": ["signalsV3"],
+          "description": "Signals v3. The same value as context.session_id."
+        },
+        "screen_count": {
+          "type": "integer",
+          "required": false,
+          "requiredIn": ["signalsV3"],
+          "description": "Signals v3. screen_viewed events in this foreground visit."
+        },
+        "unique_screen_count": {
+          "type": "integer",
+          "required": false,
+          "requiredIn": ["signalsV3"],
+          "description": "Signals v3. Distinct screen_name values in this foreground visit."
+        },
+        "event_count": {
+          "type": "integer",
+          "required": false,
+          "requiredIn": ["signalsV3"],
+          "description": "Signals v3. Customer track() events in this foreground visit. Automatic (reserved) events do not count."
+        },
+        "error_count": {
+          "type": "integer",
+          "required": false,
+          "requiredIn": ["signalsV3"],
+          "description": "Signals v3. app_error occurrences in this foreground visit, including the ones the per-session cap or the fingerprint dedupe dropped."
         }
       }
     },
@@ -235,6 +308,110 @@
           "required": false,
           "enum": ["authorized", "provisional", "denied", "not_determined"],
           "description": "The last status the SDK sent from this device. Omitted on the first report."
+        },
+        "alerts_enabled": {
+          "type": "boolean",
+          "required": false,
+          "description": "Signals v3, optional. The platform reports that alerts are shown. Sent only where the platform exposes it."
+        },
+        "lock_screen": {
+          "type": "boolean",
+          "required": false,
+          "description": "Signals v3, optional. The platform reports that notifications show on the lock screen. Sent only where the platform exposes it."
+        },
+        "scheduled_summary": {
+          "type": "boolean",
+          "required": false,
+          "description": "Signals v3, optional. iOS: notifications go to the scheduled summary. Sent only where the platform exposes it."
+        },
+        "time_sensitive": {
+          "type": "boolean",
+          "required": false,
+          "description": "Signals v3, optional. iOS: time-sensitive notifications are allowed. Sent only where the platform exposes it."
+        },
+        "channel_blocked": {
+          "type": "boolean",
+          "required": false,
+          "description": "Signals v3, optional. Android: the notification channel the SDK posts to is blocked. Sent only where the platform exposes it."
+        }
+      }
+    },
+    {
+      "name": "app_error",
+      "trigger": "Signals v3. An uncaught error the SDK's global handlers see (unless captureErrors is false), or an app call to trackError(error, {screen?, kind?}). At most one per fingerprint per session and at most 20 per session. Never flushes on its own.",
+      "automatic": "framework",
+      "countsAsActivity": false,
+      "properties": {
+        "error_kind": {
+          "type": "string",
+          "required": true,
+          "enum": ["js", "dart", "native", "handled", "network", "screen"],
+          "description": "js, dart or native for an uncaught error of that runtime; handled (the default) for trackError; network or screen when the app passes that kind."
+        },
+        "fatal": {
+          "type": "boolean",
+          "required": true,
+          "description": "true when the runtime is about to terminate."
+        },
+        "error_name": {
+          "type": "string",
+          "required": true,
+          "description": "At most 64 characters. The error class or type only (TypeError, HTTP_500). Never the message."
+        },
+        "fingerprint": {
+          "type": "string",
+          "required": true,
+          "description": "16 lowercase hex characters: the start of the SHA-256 of error_name and the function names of the top three stack frames (paths, line and column numbers stripped), joined by a newline. Without a stack, the SHA-256 of error_name alone. See signalsV3.fingerprintVectors."
+        },
+        "screen_name": {
+          "type": "string",
+          "required": false,
+          "description": "The screen_name of the last screen_viewed (or the screen the app passes to trackError). Omitted when there is none."
+        },
+        "session_id": {
+          "type": "string",
+          "required": true,
+          "description": "The same value as context.session_id."
+        }
+      }
+    },
+    {
+      "name": "app_crashed",
+      "trigger": "Signals v3, mobile. The previous run of the app ended abnormally. Sent on the next launch, before that launch's app_opened. Never in a debug build.",
+      "automatic": "always",
+      "countsAsActivity": false,
+      "properties": {
+        "crash_kind": {
+          "type": "string",
+          "required": true,
+          "enum": ["crash", "anr", "oom", "watchdog", "abnormal_exit"],
+          "description": "abnormal_exit when only the unclean-shutdown flag shows it; crash when a fatal handler recorded the error."
+        },
+        "detected_by": {
+          "type": "string",
+          "required": true,
+          "enum": ["metrickit", "exit_info", "js_fatal", "dart_fatal", "native_exception", "unclean_shutdown"],
+          "description": "How the SDK knows."
+        },
+        "crashed_app_version": {
+          "type": "string",
+          "required": true,
+          "description": "The app version of the run that crashed."
+        },
+        "crashed_session_id": {
+          "type": "string",
+          "required": false,
+          "description": "The session_id of the run that crashed."
+        },
+        "crashed_screen_name": {
+          "type": "string",
+          "required": false,
+          "description": "The last screen_name of the run that crashed."
+        },
+        "foreground": {
+          "type": "boolean",
+          "required": true,
+          "description": "true when the app was in the foreground when it ended."
         }
       }
     }
@@ -2173,5 +2350,2876 @@
         ]
       }
     ]
+  },
+  "signalsV3": {
+    "description": "Signals v3 (SPEC.md -> Engagement signals): context.session_id on every event, launch_source and link properties on app_opened, per-visit counters on app_backgrounded, app_error, app_crashed. Opt-in per section: an SDK runs a section when it implements that feature and its kind of SDK is in appliesTo. An SDK that runs any section sends launch_source and the app_backgrounded counters on every app_opened / app_backgrounded (the catalogue marks them requiredIn signalsV3) and implements pushEventsV2. Harness: the automatic.json harness with these changes. Steps: launch may carry via (launchSource) and, for web, url; track calls track(name) with no properties (the event is compared with properties {} and no common properties); trackError and uncaughtError (errors); config.captureErrors and config.debugBuild. Every expected event names context.session_id as a $session_<x> placeholder: the harness binds it to the first value it sees, every later use must carry the same value, distinct placeholders must carry distinct values, and every value must match sess_ plus a lowercase UUID v4. The harness checks no other context key here (v2.json versionContext pins those). Other placeholders: $fp_<x> binds like $session_<x>; $error_kind is the SDK's uncaught-error kind (js for React Native and web, dart for Flutter, native for Swift); $fatal_detected_by is js_fatal, dart_fatal or native_exception for the same SDKs. Attribution window: the harness flushes after every step, and that flush ends an open window (the SDK sends a held app_opened with what it knows, launch_source direct by default), so no case waits 1500 ms. Legacy cases: when an SDK that runs signalsV3 runs cases and pushEventsV2.cases, the harness drops the events named in legacyStrip.events and removes the legacyStrip.properties keys from every sent event before it compares, so those cases keep their v1 meaning.",
+    "legacyStrip": {
+      "events": ["app_error", "app_crashed"],
+      "properties": [
+        "launch_source",
+        "whisperr_message_id",
+        "link_route",
+        "link_host",
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "first_after_update",
+        "session_id",
+        "screen_count",
+        "unique_screen_count",
+        "event_count",
+        "error_count"
+      ]
+    },
+    "fingerprintVectors": [
+      {
+        "errorName": "CartLoadError",
+        "frames": ["loadCart", "CartScreen", "renderWithHooks", "commitRoot"],
+        "fingerprint": "0d3722bb489587fd"
+      },
+      {
+        "errorName": "TypeError",
+        "frames": ["fetchOffers"],
+        "fingerprint": "92321c219d3e65b9"
+      },
+      {
+        "errorName": "HTTP_500",
+        "frames": [],
+        "fingerprint": "84a5d0525e3659d3"
+      }
+    ],
+    "sections": {
+      "sessionsAndCounters": {
+        "description": "Session id and per-visit counters. Every event carries context.session_id (sess_ plus a UUID v4). A cold start always starts a new session; otherwise the id changes only after 30 minutes with no event (lazy: the next event gets the new id). app_backgrounded carries the same id as session_id and the counters for the foreground visit that ends.",
+        "appliesTo": ["mobile"],
+        "cases": [
+          {
+            "name": "session_id_on_every_event_and_a_new_id_on_each_cold_start",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              },
+              {
+                "screen": "Home"
+              },
+              {
+                "track": "cart_viewed"
+              },
+              {
+                "background": {
+                  "afterMs": 5000
+                }
+              },
+              {
+                "terminate": true
+              },
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "screen_viewed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_name": "Home",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "cart_viewed",
+                "properties": {},
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_count": 0,
+                  "event_count": 1,
+                  "foreground_ms": 5000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_count": 1,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 1
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              }
+            ]
+          },
+          {
+            "name": "session_rolls_only_after_30_minutes_without_an_event",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 1000
+                }
+              },
+              {
+                "foreground": {
+                  "afterMs": 600000
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 2000
+                }
+              },
+              {
+                "foreground": {
+                  "afterMs": 1860000
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 3000
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_count": 0,
+                  "event_count": 0,
+                  "foreground_ms": 1000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_count": 0,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 0
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": false,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_count": 0,
+                  "event_count": 0,
+                  "foreground_ms": 2000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_count": 0,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 0
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": false,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_count": 0,
+                  "event_count": 0,
+                  "foreground_ms": 3000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_count": 0,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_b",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 0
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              }
+            ]
+          },
+          {
+            "name": "app_backgrounded_counts_screens_events_and_errors_per_visit",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              },
+              {
+                "screen": "Home"
+              },
+              {
+                "screen": "Cart"
+              },
+              {
+                "screen": "Home"
+              },
+              {
+                "track": "cart_viewed"
+              },
+              {
+                "track": "checkout_started"
+              },
+              {
+                "trackError": {
+                  "name": "CartLoadError"
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 3000
+                }
+              },
+              {
+                "foreground": {
+                  "afterMs": 1000
+                }
+              },
+              {
+                "screen": "Home"
+              },
+              {
+                "background": {
+                  "afterMs": 2000
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "screen_viewed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_name": "Home",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "screen_viewed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_name": "Cart",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "screen_viewed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_name": "Home",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "cart_viewed",
+                "properties": {},
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "checkout_started",
+                "properties": {},
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "CartLoadError",
+                  "fatal": false,
+                  "fingerprint": "$fp_a",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_name": "Home",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_count": 1,
+                  "event_count": 2,
+                  "foreground_ms": 3000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_count": 3,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 2
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": false,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "screen_viewed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_name": "Home",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_count": 0,
+                  "event_count": 0,
+                  "foreground_ms": 2000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_count": 1,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 1
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "launchSource": {
+        "description": "launch_source on app_opened. launch.via hands the launch signal to the SDK while the attribution window is open: push goes to the push-open API as a body tap that launched the app; link goes to the SDK's launch-URL path (initial URL / open URL); shortcut goes to the SDK's quick-action path (an SDK without one skips that case). The SDK sends the held app_opened as soon as the source resolves, before the event that resolved it (push_opened), and only the winning signal supplies whisperr_message_id, link_route, link_host and utm_*.",
+        "appliesTo": ["mobile"],
+        "cases": [
+          {
+            "name": "launch_from_a_push_sets_launch_source_push_and_the_message_id",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140",
+                  "via": {
+                    "push": {
+                      "whisperr_message_id": "msg_8a01",
+                      "whisperr_deep_link": "myapp://offers/annual"
+                    }
+                  }
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "push",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin",
+                  "whisperr_message_id": "msg_8a01"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "push_opened",
+                "properties": {
+                  "action_id": "default",
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "deep_link": "myapp://offers/annual",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin",
+                  "whisperr_message_id": "msg_8a01"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              }
+            ]
+          },
+          {
+            "name": "universal_link_redacts_the_route_and_copies_utm",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140",
+                  "via": {
+                    "link": "https://shop.example.com/orders/12345/items/3f2c9a1e-8b7d-4c6e-9f00-1a2b3c4d5e6f/review/Zx9QmT4pLw8KvR2nB7?token=abc123&utm_source=newsletter&utm_medium=email&utm_campaign=spring_sale#top"
+                  }
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "universal_link",
+                  "link_host": "shop.example.com",
+                  "link_route": "/orders/:id/items/:id/review/:id",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin",
+                  "utm_campaign": "spring_sale",
+                  "utm_medium": "email",
+                  "utm_source": "newsletter"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              }
+            ]
+          },
+          {
+            "name": "custom_scheme_link_is_deep_link_without_host",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140",
+                  "via": {
+                    "link": "myapp://magic/Zx9QmT4pLw8KvR2nB7?next=%2Fhome"
+                  }
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "deep_link",
+                  "link_route": "/magic/:id",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              }
+            ]
+          },
+          {
+            "name": "wsrc_widget_marks_a_widget_launch",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140",
+                  "via": {
+                    "link": "myapp://home?wsrc=widget"
+                  }
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "widget",
+                  "link_route": "/home",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              }
+            ]
+          },
+          {
+            "name": "link_with_wmid_is_an_email_launch",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140",
+                  "via": {
+                    "link": "https://shop.example.com/cart?wmid=msg_e77&utm_source=whisperr"
+                  }
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "email",
+                  "link_host": "shop.example.com",
+                  "link_route": "/cart",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin",
+                  "utm_source": "whisperr",
+                  "whisperr_message_id": "msg_e77"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              }
+            ]
+          },
+          {
+            "name": "push_wins_over_a_link_in_the_same_launch",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140",
+                  "via": {
+                    "push": {
+                      "whisperr_message_id": "msg_8a02"
+                    },
+                    "link": "https://shop.example.com/cart?utm_source=ads"
+                  }
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "push",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin",
+                  "whisperr_message_id": "msg_8a02"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "push_opened",
+                "properties": {
+                  "action_id": "default",
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin",
+                  "whisperr_message_id": "msg_8a02"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "errors": {
+        "description": "app_error. trackError builds an error whose type name is name and calls the SDK's trackError(error, {kind, screen}). uncaughtError raises an error of that type through the runtime's global handler (RN ErrorUtils, Flutter FlutterError.onError, Swift the uncaught-exception handler); before it builds the client, the harness installs its own handler and checks that the SDK still calls it for every uncaught error. The harness cannot control the stack, so fingerprints are $fp_<x> placeholders (bound like $session_<x>; each must be 16 lowercase hex characters); the SDK checks its fingerprint function against fingerprintVectors.",
+        "appliesTo": ["mobile"],
+        "cases": [
+          {
+            "name": "app_error_dedupes_by_fingerprint_and_caps_at_20_per_session",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "CartLoadError"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "CartLoadError"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError01"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError02"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError03"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError04"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError05"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError06"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError07"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError08"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError09"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError10"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError11"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError12"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError13"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError14"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError15"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError16"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError17"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError18"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError19"
+                }
+              },
+              {
+                "trackError": {
+                  "name": "SyncError20"
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 1000
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "CartLoadError",
+                  "fatal": false,
+                  "fingerprint": "$fp_a",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError01",
+                  "fatal": false,
+                  "fingerprint": "$fp_b",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError02",
+                  "fatal": false,
+                  "fingerprint": "$fp_c",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError03",
+                  "fatal": false,
+                  "fingerprint": "$fp_d",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError04",
+                  "fatal": false,
+                  "fingerprint": "$fp_e",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError05",
+                  "fatal": false,
+                  "fingerprint": "$fp_f",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError06",
+                  "fatal": false,
+                  "fingerprint": "$fp_g",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError07",
+                  "fatal": false,
+                  "fingerprint": "$fp_h",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError08",
+                  "fatal": false,
+                  "fingerprint": "$fp_i",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError09",
+                  "fatal": false,
+                  "fingerprint": "$fp_j",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError10",
+                  "fatal": false,
+                  "fingerprint": "$fp_k",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError11",
+                  "fatal": false,
+                  "fingerprint": "$fp_l",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError12",
+                  "fatal": false,
+                  "fingerprint": "$fp_m",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError13",
+                  "fatal": false,
+                  "fingerprint": "$fp_n",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError14",
+                  "fatal": false,
+                  "fingerprint": "$fp_o",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError15",
+                  "fatal": false,
+                  "fingerprint": "$fp_p",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError16",
+                  "fatal": false,
+                  "fingerprint": "$fp_q",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError17",
+                  "fatal": false,
+                  "fingerprint": "$fp_r",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError18",
+                  "fatal": false,
+                  "fingerprint": "$fp_s",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "SyncError19",
+                  "fatal": false,
+                  "fingerprint": "$fp_t",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_count": 22,
+                  "event_count": 0,
+                  "foreground_ms": 1000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_count": 0,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 0
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              }
+            ]
+          },
+          {
+            "name": "uncaught_error_and_track_error_with_kind_and_screen",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              },
+              {
+                "screen": "Offers"
+              },
+              {
+                "uncaughtError": {
+                  "name": "OffersRenderError",
+                  "fatal": false
+                }
+              },
+              {
+                "trackError": {
+                  "name": "HTTP_500",
+                  "kind": "network",
+                  "screen": "Checkout"
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 1000
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "screen_viewed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_name": "Offers",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "$error_kind",
+                  "error_name": "OffersRenderError",
+                  "fatal": false,
+                  "fingerprint": "$fp_a",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_name": "Offers",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "network",
+                  "error_name": "HTTP_500",
+                  "fatal": false,
+                  "fingerprint": "$fp_b",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_name": "Checkout",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_count": 2,
+                  "event_count": 0,
+                  "foreground_ms": 1000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_count": 1,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 1
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              }
+            ]
+          },
+          {
+            "name": "capture_errors_off_ignores_uncaught_errors_but_not_track_error",
+            "config": {
+              "captureErrors": false
+            },
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              },
+              {
+                "uncaughtError": {
+                  "name": "OffersRenderError",
+                  "fatal": false
+                }
+              },
+              {
+                "trackError": {
+                  "name": "CartLoadError"
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 1000
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "handled",
+                  "error_name": "CartLoadError",
+                  "fatal": false,
+                  "fingerprint": "$fp_a",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_count": 1,
+                  "event_count": 0,
+                  "foreground_ms": 1000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_count": 0,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 0
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "crashes": {
+        "description": "app_crashed from the unclean-shutdown flag. On each foreground the SDK persists {running, session_id, screen, app_version}; on background it clears it; a fatal handler records last_fatal. At launch a set flag sends app_crashed before that launch's app_opened (after app_installed / app_updated). config.debugBuild true makes the SDK's debug-build check (__DEV__, kDebugMode, #if DEBUG) report a debug build; every other case reports a release build.",
+        "appliesTo": ["mobile"],
+        "cases": [
+          {
+            "name": "unclean_shutdown_sends_app_crashed_before_the_next_app_opened",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              },
+              {
+                "screen": "Checkout"
+              },
+              {
+                "terminate": true
+              },
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "screen_viewed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_name": "Checkout",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_crashed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "crash_kind": "abnormal_exit",
+                  "crashed_app_version": "1.4.0",
+                  "crashed_screen_name": "Checkout",
+                  "crashed_session_id": "$session_a",
+                  "detected_by": "unclean_shutdown",
+                  "foreground": true,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              }
+            ]
+          },
+          {
+            "name": "fatal_uncaught_error_upgrades_the_next_app_crashed_to_crash",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              },
+              {
+                "screen": "Checkout"
+              },
+              {
+                "uncaughtError": {
+                  "name": "CheckoutStateError",
+                  "fatal": true
+                }
+              },
+              {
+                "terminate": true
+              },
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "screen_viewed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_name": "Checkout",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_error",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_kind": "$error_kind",
+                  "error_name": "CheckoutStateError",
+                  "fatal": true,
+                  "fingerprint": "$fp_a",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_name": "Checkout",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_crashed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "crash_kind": "crash",
+                  "crashed_app_version": "1.4.0",
+                  "crashed_screen_name": "Checkout",
+                  "crashed_session_id": "$session_a",
+                  "detected_by": "$fatal_detected_by",
+                  "foreground": true,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              }
+            ]
+          },
+          {
+            "name": "termination_in_the_background_is_not_a_crash",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 1000
+                }
+              },
+              {
+                "terminate": true
+              },
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_count": 0,
+                  "event_count": 0,
+                  "foreground_ms": 1000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_count": 0,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 0
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              }
+            ]
+          },
+          {
+            "name": "debug_build_never_sends_app_crashed",
+            "config": {
+              "debugBuild": true
+            },
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              },
+              {
+                "terminate": true
+              },
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "firstAfterUpdate": {
+        "description": "Optional. first_after_update: true on the first app_opened after app_updated, and on no other app_opened.",
+        "appliesTo": ["mobile"],
+        "cases": [
+          {
+            "name": "first_open_after_an_update_is_flagged_once",
+            "device": {
+              "osVersion": "18.2",
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "appVersion": "1.4.0",
+                  "appBuild": "140"
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 1000
+                }
+              },
+              {
+                "terminate": true
+              },
+              {
+                "launch": {
+                  "appVersion": "1.5.0",
+                  "appBuild": "150"
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 1000
+                }
+              },
+              {
+                "foreground": {
+                  "afterMs": 1000
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_installed",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "cold_start": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "app_build": "140",
+                  "app_version": "1.4.0",
+                  "error_count": 0,
+                  "event_count": 0,
+                  "foreground_ms": 1000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_count": 0,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 0
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_updated",
+                "properties": {
+                  "app_build": "150",
+                  "app_version": "1.5.0",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "previous_build": "140",
+                  "previous_version": "1.4.0",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "150",
+                  "app_version": "1.5.0",
+                  "cold_start": true,
+                  "first_after_update": true,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "app_build": "150",
+                  "app_version": "1.5.0",
+                  "error_count": 0,
+                  "event_count": 0,
+                  "foreground_ms": 1000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "screen_count": 0,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_b",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 0
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "app_build": "150",
+                  "app_version": "1.5.0",
+                  "cold_start": false,
+                  "launch_source": "direct",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "os_version": "18.2",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "web": {
+        "description": "Browser SDKs. launch loads url (the landing URL in location) and makes the page visible; background is visibilitychange to hidden; foreground is visibilitychange to visible. One app_opened per web session (each new session_id), without cold_start. launch_source: wmid on the landing URL is email (whisperr_message_id = wmid), else wsrc widget or shortcut, else direct. link_route and link_host come from location, utm_* when present. foreground_ms counts the visible period that ends. The web harness has no app version, and it compares only app_opened, app_backgrounded and app_error; it drops every other event before comparing.",
+        "appliesTo": ["web"],
+        "cases": [
+          {
+            "name": "web_landing_with_wmid_is_an_email_open",
+            "device": {
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "url": "https://shop.example.com/orders/12345?wmid=msg_e91&utm_source=whisperr&utm_medium=email&utm_campaign=winback"
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 8000
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "launch_source": "email",
+                  "link_host": "shop.example.com",
+                  "link_route": "/orders/:id",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin",
+                  "utm_campaign": "winback",
+                  "utm_medium": "email",
+                  "utm_source": "whisperr",
+                  "whisperr_message_id": "msg_e91"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "error_count": 0,
+                  "event_count": 0,
+                  "foreground_ms": 8000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "platform": "$platform",
+                  "screen_count": 0,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 0
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              }
+            ]
+          },
+          {
+            "name": "web_wsrc_shortcut",
+            "device": {
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "url": "https://app.example.com/?wsrc=shortcut"
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "launch_source": "shortcut",
+                  "link_host": "app.example.com",
+                  "link_route": "/",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              }
+            ]
+          },
+          {
+            "name": "web_sends_one_app_opened_per_session",
+            "device": {
+              "locale": "de-DE",
+              "timezone": "Europe/Berlin"
+            },
+            "steps": [
+              {
+                "launch": {
+                  "url": "https://app.example.com/projects/884213"
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 1000
+                }
+              },
+              {
+                "foreground": {
+                  "afterMs": 600000
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 2000
+                }
+              },
+              {
+                "foreground": {
+                  "afterMs": 1860000
+                }
+              },
+              {
+                "background": {
+                  "afterMs": 3000
+                }
+              }
+            ],
+            "expectedEvents": [
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "launch_source": "direct",
+                  "link_host": "app.example.com",
+                  "link_route": "/projects/:id",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "error_count": 0,
+                  "event_count": 0,
+                  "foreground_ms": 1000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "platform": "$platform",
+                  "screen_count": 0,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 0
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "error_count": 0,
+                  "event_count": 0,
+                  "foreground_ms": 2000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "platform": "$platform",
+                  "screen_count": 0,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_a",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 0
+                },
+                "context": {
+                  "session_id": "$session_a"
+                }
+              },
+              {
+                "event_type": "app_opened",
+                "properties": {
+                  "launch_source": "direct",
+                  "link_host": "app.example.com",
+                  "link_route": "/projects/:id",
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "platform": "$platform",
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "timezone": "Europe/Berlin"
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              },
+              {
+                "event_type": "app_backgrounded",
+                "properties": {
+                  "error_count": 0,
+                  "event_count": 0,
+                  "foreground_ms": 3000,
+                  "locale": "de-DE",
+                  "os_name": "$platform",
+                  "platform": "$platform",
+                  "screen_count": 0,
+                  "sdk_name": "$sdk_name",
+                  "sdk_version": "$sdk_version",
+                  "session_id": "$session_b",
+                  "timezone": "Europe/Berlin",
+                  "unique_screen_count": 0
+                },
+                "context": {
+                  "session_id": "$session_b"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
   }
 }

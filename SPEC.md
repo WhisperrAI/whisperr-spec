@@ -83,6 +83,8 @@ PostHog project key, not a secret.
   idempotency key (any stable unique string; UUID recommended) so at-least-once
   retries dedup server-side. It must be stable across retries of the same event.
   Contract v2 SDKs also put the [version keys](#version-context) in `context`.
+  Signals v3 client SDKs also put `session_id` in `context` on every event
+  (see [Engagement signals](#engagement-signals-v3)).
 
 ### Version context
 
@@ -746,12 +748,14 @@ format does not change.
 |---|---|---|---|
 | `app_installed` | First launch of an install | `app_version`, `app_build` | no |
 | `app_updated` | A launch where the app version or build differs from the stored one | `app_version`, `app_build`, `previous_version`, `previous_build` | no |
-| `app_opened` | Every move to the foreground, including the cold start | `cold_start` (bool) | **yes** |
-| `app_backgrounded` | Every move to the background | `foreground_ms` (int) | no |
+| `app_opened` | Every move to the foreground, including the cold start | `cold_start` (bool); signals v3: `launch_source`, `whisperr_message_id`, `link_route`, `link_host`, `utm_source`, `utm_medium`, `utm_campaign`, `first_after_update` | **yes** |
+| `app_backgrounded` | Every move to the background | `foreground_ms` (int); signals v3: `session_id`, `screen_count`, `unique_screen_count`, `event_count`, `error_count` | no |
 | `screen_viewed` | The app calls the screen API; automatic only where the framework makes it cheap | `screen_name` | **yes** |
 | `push_opened` | The user opens a notification whose data carries `whisperr_message_id` | `whisperr_message_id`, `deep_link` (optional), `action_id` and `cold_start` (contract v2) | **yes** |
 | `push_received` | Contract v2. The device receives a push whose data carries `whisperr_message_id` | `whisperr_message_id`, `foreground` (bool), `source` | no |
-| `push_permission_changed` | The SDK first learns the notification permission, or learns that it changed | `status`, `previous_status` (optional) | no |
+| `push_permission_changed` | The SDK first learns the notification permission, or learns that it changed | `status`, `previous_status` (optional); signals v3, optional: `alerts_enabled`, `lock_screen`, `scheduled_summary`, `time_sensitive`, `channel_blocked` | no |
+| `app_error` | Signals v3. An uncaught error, or an app call to `trackError` | `error_kind`, `fatal`, `error_name`, `fingerprint`, `screen_name` (optional), `session_id` | no |
+| `app_crashed` | Signals v3, mobile. The previous run ended abnormally; sent on the next launch | `crash_kind`, `detected_by`, `crashed_app_version`, `crashed_session_id` (optional), `crashed_screen_name` (optional), `foreground` | no |
 
 The full catalogue, with types and triggers, is machine-readable in
 [`conformance/automatic.json`](conformance/automatic.json) (`reserved`,
@@ -884,8 +888,9 @@ Every automatic event also carries these **flat** keys in `properties`:
   registration supplies the label and schema; the code keeps its meaning.
 - **Activity.** Only `app_opened`, `screen_viewed`, and `push_opened` (and the
   app's own events) make a user active. `app_installed`, `app_updated`,
-  `app_backgrounded`, `push_permission_changed`, and `push_received` describe
-  the app or the device, not a use of the app, and never count as activity.
+  `app_backgrounded`, `push_permission_changed`, `push_received`, `app_error`
+  and `app_crashed` describe the app or the device, not a use of the app, and
+  never count as activity.
   A push that arrives is not a return to the app.
 - **Derived events can never use these names.** They are raw events reported
   by the device.
@@ -899,6 +904,92 @@ meaning is in [`contracts/11`](contracts/11-automatic-events.md).
 automatic events **disabled**. Those fixtures pin exact request sequences, and
 an automatic `app_opened` would add requests their steps did not cause. Only
 the `automatic.json` harness turns them on.
+
+### Engagement signals (v3)
+
+Signals v3 tells the engine how a user came into the app, how deep each visit
+went, and whether the app failed them. Client SDKs (React Native / Expo, web,
+Swift, Flutter) implement it; server SDKs do not. Executable in
+`conformance/automatic.json` → `signalsV3`.
+
+- **Session.** Every event a v3 client SDK sends carries `context.session_id`:
+  `sess_` plus a UUID v4. The SDK starts a new id after 30 minutes with no
+  event (lazily: the next event gets the new id) and, on mobile, on every cold
+  start. There are no `session_started` / `session_ended` events.
+- **`launch_source` on `app_opened`.** One of `push`, `deep_link` (custom
+  scheme), `universal_link` (http(s): iOS universal link, Android app link),
+  `widget`, `shortcut`, `email`, `direct`. Required from v3 SDKs. Precedence
+  when several signals arrive: push, shortcut, widget, email, universal_link,
+  deep_link, direct. A link whose query has `wsrc=widget` or `wsrc=shortcut`
+  is that source; a link with `wmid` is `email` (`whisperr_message_id` = the
+  `wmid` value). `push` copies `whisperr_message_id` from the notification
+  data. Only the winning signal supplies the link properties.
+- **Link properties.** `link_route` (≤256) is the path only: the query and the
+  fragment are dropped, and each segment that is all digits, a UUID, or 16
+  characters or longer becomes `:id`. A custom-scheme link has no host, so its
+  route is `/` plus everything between `scheme://` and the query
+  (`myapp://magic/Zx9QmT4pLw8KvR2nB7` → `/magic/:id`). `link_host` only for
+  http(s) links. `utm_source`, `utm_medium`, `utm_campaign` (≤128) only when
+  the link has them. Never the full URL.
+- **Attribution window.** The SDK holds `app_opened` up to 1500 ms after the
+  foreground, or until a source resolves. When a source resolves it sends the
+  held `app_opened` before the event that resolved it (`push_opened`). A move
+  to the background inside the window, or an explicit flush, sends it at once
+  with what is known (`direct` by default).
+- **`first_after_update`** (optional): `true` on the first `app_opened` after
+  `app_updated`, omitted otherwise.
+- **Web.** One `app_opened` per web session (each new `session_id`), without
+  `cold_start`. `launch_source`: `wmid` on the landing URL → `email`, else
+  `wsrc` → `widget` / `shortcut`, else `direct`. `link_route` and `link_host`
+  come from `location`; `utm_*` when present. `app_backgrounded` on
+  `visibilitychange` to hidden (and `pagehide`). Web keeps `page_viewed`.
+- **Per-visit counters on `app_backgrounded`.** `session_id` (the same value as
+  the context key), `screen_count` (`screen_viewed` events this foreground
+  visit), `unique_screen_count` (distinct `screen_name`s), `event_count`
+  (customer `track()` events; automatic events do not count), `error_count`
+  (`app_error` occurrences, including the ones the caps dropped). They reset
+  on each foreground.
+- **`app_error`.** `error_kind` is `js`, `dart` or `native` for an uncaught
+  error of that runtime, `handled` for `trackError` (the default), or
+  `network` / `screen` when the app passes that kind. `fatal` is `true` when
+  the runtime is about to terminate. `error_name` (≤64) is the class or type
+  only (`TypeError`, `HTTP_500`), never the message. `fingerprint` is the first
+  16 lowercase hex characters of the SHA-256 of `error_name` and the function
+  names of the top three stack frames (file paths, line and column numbers
+  stripped), joined by `\n`; without a stack, of `error_name` alone
+  (vectors: `signalsV3.fingerprintVectors`). `screen_name` is the last
+  `screen_viewed` name, or the screen the app passes. The SDK never sends an
+  error message, a stack, or a URL.
+  - **Caps:** at most one `app_error` per `fingerprint` per session, and at
+    most 20 per session. `error_count` still counts every occurrence. An error
+    never flushes the queue on its own.
+  - **Capture:** React Native `ErrorUtils.setGlobalHandler` (and the Hermes
+    promise rejection tracker when available); Flutter `FlutterError.onError`
+    and `PlatformDispatcher.instance.onError`; Swift
+    `NSSetUncaughtExceptionHandler`; web `error` and `unhandledrejection`
+    listeners (ignoring a cross-origin `Script error.` with no error object).
+    Every handler **chains to the handler installed before it**, which still
+    runs.
+  - **API:** every client SDK exposes `trackError(error, {screen?, kind?})`.
+    The option `captureErrors` (default `true`) turns automatic capture off;
+    `trackError` still sends. Errors follow opt-out and consent like every
+    event.
+- **`app_crashed`** (mobile). On each foreground the SDK persists
+  `{running: true, session_id, screen, app_version}` and clears it on
+  background. At launch, a set flag sends `app_crashed` with
+  `crash_kind: abnormal_exit`, `detected_by: unclean_shutdown`,
+  `foreground: true`, `crashed_app_version`, `crashed_session_id` and
+  `crashed_screen_name`. When the fatal handler recorded the error
+  (`last_fatal`), it is `crash_kind: crash` with `detected_by` `js_fatal`,
+  `dart_fatal` or `native_exception`. Other values (`anr`, `oom`, `watchdog`;
+  `metrickit`, `exit_info`) are for platform crash reports. The SDK sends it
+  after that launch's `app_installed` / `app_updated` and before its
+  `app_opened`. `occurred_at` is the launch time (or the crash time when
+  known), within 30 days. **Never in a debug build** (`__DEV__`,
+  `kDebugMode`, `#if DEBUG`); SDKs make that check injectable for tests.
+- **Permission detail** (optional): `push_permission_changed` may carry
+  `alerts_enabled`, `lock_screen`, `scheduled_summary`, `time_sensitive`,
+  `channel_blocked` (booleans), only where the platform exposes them.
 
 ## Billing fallback events
 
@@ -983,6 +1074,8 @@ them and stays conformant to v1.
 | `v2.json` | `versionContext` | [Version context](#version-context), client | mobile, web |
 | `v2.json` | `serverVersionContext` | [Version context](#version-context), server | server |
 | `automatic.json` | `pushEventsV2` | `push_received`, `push_opened` `action_id` / `cold_start` | mobile |
+| `automatic.json` | `signalsV3` → `sessionsAndCounters`, `launchSource`, `errors`, `crashes`, `firstAfterUpdate` | [Engagement signals](#engagement-signals-v3) | mobile |
+| `automatic.json` | `signalsV3` → `web` | [Engagement signals](#engagement-signals-v3), browser | web |
 
 **How a harness opts in.**
 
@@ -996,6 +1089,13 @@ them and stays conformant to v1.
    every other legacy case unchanged.
 4. For `pushEventsV2`, run its cases on the `automatic.json` harness with the
    two new steps (`receivePush`, `openPush`), and skip its `supersedes` cases.
+5. For `signalsV3`, run each section whose `appliesTo` names the SDK on the
+   `automatic.json` harness with the v3 steps (`launch.via`, `launch.url`,
+   `track`, `trackError`, `uncaughtError`) and config (`captureErrors`,
+   `debugBuild`). A v3 SDK keeps running the legacy `cases` and
+   `pushEventsV2`, but first drops the events in `signalsV3.legacyStrip.events`
+   and removes the `legacyStrip.properties` keys from what it sent. The
+   harness rules are in the `signalsV3` description.
 
 **Environment switch.** Every v2 harness can turn the SDK's environment
 detection on or off: device default traits (`timezone`, `locale`), the
