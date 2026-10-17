@@ -89,6 +89,68 @@ for c in auto.get("cases", []) + auto.get("pushEventsV2", {}).get("cases", []):
                 err(f, f"{where}: {e['event_type']} must carry {key!r}")
         if "timezone" in props and "timezone_offset_minutes" in props:
             err(f, f"{where}: timezone_offset_minutes is only a fallback; never send it with timezone")
+        for key, spec in allowed.items():
+            # Legacy cases run on mobile harnesses.
+            if "mobile" in spec.get("requiredIn", []) and key not in props:
+                err(f, f"{where}: {e['event_type']} must carry {key!r} on mobile")
+
+# ---------------------------------------------------------------- 3b-bis. signals v3 cases
+# The same catalogue check, plus: requiredIn signalsV3 keys, the v3
+# placeholders, track() events, and the fingerprint vectors.
+import hashlib, re
+v3 = auto.get("signalsV3", {})
+V3_PLACEHOLDER = {
+    "session_id": re.compile(r"^\$session_[a-z]$"),
+    "crashed_session_id": re.compile(r"^\$session_[a-z]$"),
+    "fingerprint": re.compile(r"^\$fp_[a-z]$"),
+    "error_kind": re.compile(r"^\$error_kind$"),
+    "detected_by": re.compile(r"^\$fatal_detected_by$"),
+}
+for vec in v3.get("fingerprintVectors", []):
+    want = hashlib.sha256("\n".join([vec["errorName"]] + vec["frames"][:3]).encode()).hexdigest()[:16]
+    if vec["fingerprint"] != want:
+        err(f, f"fingerprint vector {vec['errorName']!r}: {vec['fingerprint']} != {want}")
+legacy_case_names = {c["name"] for c in auto.get("cases", [])}
+for sec_name, sec in v3.get("sections", {}).items():
+    kinds = set(sec["appliesTo"])
+    for c in sec["cases"]:
+        if c["name"] in legacy_case_names:
+            err(f, f"signalsV3 case {c['name']!r} reuses a legacy case name")
+        tracked = {st["track"] for st in c["steps"] if "track" in st}
+        web = kinds == {"web"}
+        for st in c["steps"]:
+            launch = st.get("launch")
+            if launch is not None and web != ("url" in launch):
+                err(f, f"case {c['name']!r}: a web launch has url, a mobile launch has appVersion")
+        for i, e in enumerate(c["expectedEvents"]):
+            where = f"signalsV3.{sec_name} case {c['name']!r} event {i + 1}"
+            if e["event_type"] in tracked and e["event_type"] not in reserved:
+                if e["properties"] != {}:
+                    err(f, f"{where}: a track() event is compared with properties {{}}")
+                continue
+            r = reserved.get(e["event_type"])
+            if r is None:
+                err(f, f"{where}: {e['event_type']!r} is neither reserved nor tracked by a step"); continue
+            props = e["properties"]
+            allowed = {**common, **r["properties"]}
+            for key, value in props.items():
+                if key not in allowed:
+                    err(f, f"{where}: {key!r} is not a property of {e['event_type']}"); continue
+                pattern = V3_PLACEHOLDER.get(key)
+                if isinstance(value, str) and value.startswith("$") and "placeholder" not in allowed[key]:
+                    if not (pattern and pattern.match(value)):
+                        err(f, f"{where}: {key} has unknown placeholder {value!r}")
+                    continue
+                check_value(where, key, allowed[key], value)
+            for key, spec in allowed.items():
+                need = spec.get("required") or "signalsV3" in spec.get("requiredIn", []) \
+                    or ("mobile" in spec.get("requiredIn", []) and "mobile" in kinds)
+                if need and key not in props:
+                    err(f, f"{where}: {e['event_type']} must carry {key!r}")
+            if web and "cold_start" in props:
+                err(f, f"{where}: a browser SDK omits cold_start")
+            if "session_id" in props and props["session_id"] != e["context"]["session_id"]:
+                err(f, f"{where}: session_id must equal context.session_id")
 
 # ---------------------------------------------------------------- 3a. client email consent cases
 # Client SDKs run clientEmailConsent instead of the cases it supersedes, so a

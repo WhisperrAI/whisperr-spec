@@ -45,6 +45,59 @@
           "items": { "$ref": "#/$defs/case_v2" }
         }
       }
+    },
+    "signalsV3": {
+      "description": "Signals v3 flows (session_id, launch_source, per-visit counters, app_error, app_crashed). Opt-in per section, by appliesTo.",
+      "type": "object",
+      "required": ["description", "legacyStrip", "fingerprintVectors", "sections"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "legacyStrip": {
+          "description": "What a signalsV3 harness removes from sent events before it compares a legacy case.",
+          "type": "object",
+          "required": ["events", "properties"],
+          "additionalProperties": false,
+          "properties": {
+            "events": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/event_type" } },
+            "properties": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/property_name" } }
+          }
+        },
+        "fingerprintVectors": {
+          "description": "app_error fingerprint test vectors: errorName and the already-stripped frame function names, top first.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["errorName", "frames", "fingerprint"],
+            "additionalProperties": false,
+            "properties": {
+              "errorName": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "frames": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{16}$" }
+            }
+          }
+        },
+        "sections": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "required": ["description", "appliesTo", "cases"],
+            "additionalProperties": false,
+            "properties": {
+              "description": { "type": "string", "minLength": 1 },
+              "appliesTo": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "enum": ["mobile", "web"] }
+              },
+              "cases": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/case_v3" } }
+            }
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -58,6 +111,12 @@
         "type": { "enum": ["string", "integer", "boolean"] },
         "enum": { "type": "array", "minItems": 1, "items": { "type": "string" } },
         "required": { "type": "boolean" },
+        "requiredIn": {
+          "description": "Required in these contexts even though required is false: signalsV3 (every event an SDK that runs signalsV3 sends), mobile (every event a mobile SDK sends).",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["signalsV3", "mobile"] }
+        },
         "placeholder": {
           "description": "A value the harness cannot control. Expected events carry this token, and the harness substitutes its SDK's own value.",
           "type": "string",
@@ -267,6 +326,111 @@
             "platform": { "const": "$platform" },
             "sdk_name": { "const": "$sdk_name" },
             "sdk_version": { "const": "$sdk_version" }
+          }
+        }
+      }
+    },
+    "case_v3": {
+      "type": "object",
+      "required": ["name", "device", "steps", "expectedEvents"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "captureErrors": {
+              "description": "false turns off automatic error capture; trackError still sends.",
+              "type": "boolean"
+            },
+            "debugBuild": {
+              "description": "true makes the SDK's debug-build check report a debug build.",
+              "type": "boolean"
+            }
+          }
+        },
+        "device": { "$ref": "#/$defs/device" },
+        "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/step_v3" } },
+        "expectedEvents": { "type": "array", "items": { "$ref": "#/$defs/expected_event_v3" } }
+      }
+    },
+    "step_v3": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "launch": {
+          "description": "Mobile: the process starts with this app version (appVersion and appBuild), optionally launched by via. Web: the page loads url.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "appVersion": { "type": "string", "minLength": 1 },
+            "appBuild": { "type": "string", "minLength": 1 },
+            "url": { "type": "string", "pattern": "^https?://" },
+            "via": {
+              "description": "The launch signals the SDK receives inside the attribution window.",
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": false,
+              "properties": {
+                "push": { "description": "Notification data, opened with a body tap that launched the app.", "type": "object" },
+                "link": { "description": "The launch URL.", "type": "string", "minLength": 1 },
+                "shortcut": { "description": "A home-screen quick action or app shortcut id.", "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "oneOf": [
+            { "required": ["appVersion", "appBuild"], "not": { "required": ["url"] } },
+            { "required": ["url"], "not": { "anyOf": [{ "required": ["appVersion"] }, { "required": ["via"] }] } }
+          ]
+        },
+        "background": { "$ref": "#/$defs/after" },
+        "foreground": { "$ref": "#/$defs/after" },
+        "terminate": { "const": true },
+        "screen": { "type": "string", "minLength": 1 },
+        "track": {
+          "description": "The app calls track(name) with no properties.",
+          "$ref": "#/$defs/event_type"
+        },
+        "trackError": {
+          "description": "The app calls trackError with an error of type name, and kind and screen when given.",
+          "type": "object",
+          "required": ["name"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "kind": { "enum": ["handled", "network", "screen"] },
+            "screen": { "type": "string", "minLength": 1 }
+          }
+        },
+        "uncaughtError": {
+          "description": "The runtime's global handler sees an uncaught error of type name.",
+          "type": "object",
+          "required": ["name", "fatal"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "fatal": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "expected_event_v3": {
+      "description": "As expected_event, plus the session_id placeholder the event's context must carry.",
+      "type": "object",
+      "required": ["event_type", "properties", "context"],
+      "additionalProperties": false,
+      "properties": {
+        "event_type": { "$ref": "#/$defs/event_type" },
+        "properties": { "$ref": "#/$defs/expected_event/properties/properties" },
+        "context": {
+          "type": "object",
+          "required": ["session_id"],
+          "additionalProperties": false,
+          "properties": {
+            "session_id": { "type": "string", "pattern": "^\\$session_[a-z]$" }
           }
         }
       }

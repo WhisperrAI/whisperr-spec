@@ -9,11 +9,18 @@ What the server does with the events client SDKs send on their own.
 
 A churn engine needs an activity signal it can trust. Before this contract an app had activity
 only where its developer, or a generated integration, added a `track()` call in the right place.
-Generated wiring misses events. The mobile SDKs therefore send eight reserved events by default:
+Generated wiring misses events. The mobile SDKs therefore send reserved events by default:
 `app_installed`, `app_updated`, `app_opened`, `app_backgrounded`, `screen_viewed`,
-`push_opened`, `push_permission_changed`, and (SDK contract v2) `push_received`. Every app gets
-"days since last open" on day one, the engine knows which devices can still receive push, and it
-can tell a push that never arrived from a push that arrived and was not opened.
+`push_opened`, `push_permission_changed`, (SDK contract v2) `push_received`, and (signals v3)
+`app_error` and `app_crashed`. Every app gets "days since last open" on day one, the engine knows
+which devices can still receive push, and it can tell a push that never arrived from a push that
+arrived and was not opened.
+
+Signals v3 adds `app_error` and `app_crashed`, a `context.session_id` on every client event,
+`launch_source` and link attribution on `app_opened`, and per-visit counters on
+`app_backgrounded` ([`SPEC.md`](../SPEC.md) → Engagement signals). They let the engine see how
+deep each visit went, what brought the user back, and whether the app failed the user before
+they left.
 
 ## Reserved names are legal without registration
 
@@ -41,7 +48,7 @@ Each reserved event declares `countsAsActivity` in the catalogue.
 
 | counts as activity | does not count |
 |---|---|
-| `app_opened`, `screen_viewed`, `push_opened` | `app_installed`, `app_updated`, `app_backgrounded`, `push_permission_changed`, `push_received` |
+| `app_opened`, `screen_viewed`, `push_opened` | `app_installed`, `app_updated`, `app_backgrounded`, `push_permission_changed`, `push_received`, `app_error`, `app_crashed` |
 
 "Activity" means the user did something in the app: it drives last-active, active days, and the
 lifecycle stages. Events that only describe the app (an install, an update, the app going to the
@@ -52,6 +59,9 @@ way to a customer's own event with a reserved name.
 of the app, so it never makes a user active, also when the app was in the foreground. Only
 `push_opened` is the user's action. The engine still excludes `push_opened` from the "returned"
 outcome of the message that caused it.
+
+`app_error` and `app_crashed` report that the app failed, not that the user did something. A crash
+reported on the next launch arrives with that launch's `app_opened`, which is the activity.
 
 Activity comes only from the app's own events. Provider webhooks, billing events, delivery
 receipts, and other source observations never count as activity, whatever their name.
@@ -64,12 +74,21 @@ view lists them separately, with their receipt state (last seen, 30-day count), 
 can see that the SDK sends them. A reserved name the app registered itself appears in the
 universe as usual and not twice.
 
+## Signals v3 properties
+
+The server stores the v3 properties as sent and does not validate them, as for every reserved
+event. `context.session_id` is a free-form context key. Readers that group by session use
+`context.session_id`, and `app_backgrounded.session_id` carries the same value. A v3 SDK sends
+`launch_source` on every `app_opened`; an `app_opened` without it comes from an older SDK, and
+readers treat it as unknown, not as `direct`.
+
 ## Invariants
 
 1. A reserved automatic event from a publishable SDK key is accepted and stored as `mapped` for
    an app with an empty registry. (test)
 2. A customer registration of a reserved name keeps working unchanged. (test)
-3. `app_installed`, `app_updated`, `app_backgrounded`, and `push_received` never move
-   `last_active_at` or the activity counters; `app_opened` and `screen_viewed` do. (test)
+3. `app_installed`, `app_updated`, `app_backgrounded`, `push_received`, `app_error`, and
+   `app_crashed` never move `last_active_at` or the activity counters; `app_opened` and
+   `screen_viewed` do. (test)
 4. A derived-event definition with a reserved name fails validation. (test)
 5. Reserved events never change the coverage `wired` / `applicable` totals. (test)
