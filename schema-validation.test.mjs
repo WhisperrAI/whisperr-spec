@@ -117,6 +117,8 @@ for (const [name, file, mutate, message] of [
     d => { caseNamed(d, 'checkout_updated_is_keyed_by_cart_contents').given.inbound.total_price = '180.00'; }, 'cart contents digest'],
   ['a refund case that omits the order read-back scope', 'conformance/connectors/shopify.json',
     d => { caseNamed(d, 'refund_counts_only_successful_refund_transactions').requires_scopes = ['read_orders']; }, "requires ['read_customers']"],
+  ['an ignored fulfillment case that omits the topic scopes', 'conformance/connectors/shopify.json',
+    d => { caseNamed(d, 'late_fulfillment_update_is_not_a_new_shipment').requires_scopes = ['read_fulfillments']; }, "delivery requires ['read_customers', 'read_orders']"],
   ['an event that needs an unrequested scope', 'conformance/connectors/shopify.json',
     d => { d.manifest.events[0].requires_scopes.push('read_all_orders'); }, "requires scope 'read_all_orders'"],
   ['a signal declared twice', 'conformance/connectors/woocommerce.json',

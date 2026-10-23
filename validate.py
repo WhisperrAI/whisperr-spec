@@ -416,11 +416,18 @@ for f, d in sorted(docs.items()):
                 err(f, f"case {c['name']!r}: property {extra!r} is outside {code}'s allowlist")
         # Only a delivery that names a declared signal is held to its scopes (a
         # storefront pixel event can carry the same code under other scopes).
-        if exact and c.get("expect", {}).get("outcome") == "accepted":
-            needed = set.intersection(*[set(e.get("requires_scopes", [])) for e in pool])
+        # Scopes are checked per delivery, before a signal is chosen, so a case
+        # whose delivery gets past verification (any outcome but rejected) lists
+        # the scopes of every signal its topic or hook carries: without them the
+        # runtime refuses the delivery instead of ignoring or accepting it.
+        if c.get("expect", {}).get("outcome") != "rejected":
+            carried = {inbound.get("hook"), inbound.get("topic")} - {None}
+            on_topic = [e for e in events if carried & ({e["signal"]} | set(e.get("topics", [])))]
+            needed = set().union(*[set(e.get("requires_scopes", [])) for e in on_topic])
             missing = sorted(needed - set(c.get("requires_scopes", [])))
             if missing:
-                err(f, f"case {c['name']!r}: emits {code}, which requires {missing}; list them in the case's requires_scopes")
+                what = f"emits {code}, which" if exact else f"its {'/'.join(sorted(carried))} delivery"
+                err(f, f"case {c['name']!r}: {what} requires {missing}; list them in the case's requires_scopes")
         key = (env.get("correlation") or {}).get("occurrence_key")
         checks = [(key, pool)] if key is not None else []
         state = c.get("given", {}).get("state") or {}

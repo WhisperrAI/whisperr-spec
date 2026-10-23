@@ -1251,7 +1251,9 @@
         "notes": "The fulfillment was created more than 29 days ago, past ingress's 30-day window. order_shipped is ignored for it (no Shopify read), and a later delivered update is still accepted as order_delivered."
       },
       "requires_scopes": [
-        "read_fulfillments"
+        "read_fulfillments",
+        "read_orders",
+        "read_customers"
       ]
     },
     {

@@ -220,8 +220,10 @@ Playbooks read the per-store names through alias rows, so a connector keeps its 
 
 `requires_scopes` lists every scope the signal needs to be observed at all, including scopes a
 read-back needs: a Shopify refund or fulfillment names only the order, so reading the exact
-order's customer needs `read_customers` as well as `read_orders`. A case that expects the event
-lists the same scopes.
+order's customer needs `read_customers` as well as `read_orders`. Scopes are checked per delivery,
+before a signal is chosen, so a case whose delivery is not rejected (accepted, ignored or
+deduplicated) lists the scopes of every signal its topic or hook carries; without them the
+runtime refuses the delivery instead.
 
 ## `health` and `lifecycle`
 
@@ -244,5 +246,5 @@ untouched, and that isolation is a fixture case.
 10. When `events` is declared, every signal appears once, needs only requested scopes, and every
     expected envelope in the fixtures uses a declared code, only the allowlisted properties of the
     signal it was delivered as, and an occurrence key its template can produce (a contents digest
-    is recomputed from the case's line items). A case that accepts a declared signal lists the
-    signal's `requires_scopes`.
+    is recomputed from the case's line items). A case whose delivery is not rejected lists the
+    `requires_scopes` of every signal its topic or hook carries.
