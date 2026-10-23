@@ -378,32 +378,61 @@ for f, d in sorted(docs.items()):
                 err(f, f"events: {e['signal']!r} counts as activity, but only commerce shopper actions may (contracts/11)")
             if e.get("historical"):
                 err(f, f"events: {e['signal']!r} is historical; history never counts as activity")
-    def templates_for(code):
-        chosen = by_code.get(code) if code else None
-        pool = chosen if chosen else [None] + events
+    def candidates(code, inbound):
+        # The declared events a case's expected envelope can come from: those
+        # with its code, narrowed to the signal the inbound delivery carries
+        # (its hook or topic) when one matches. A live order_paid is held to the
+        # live allowlist, not the union with the history signal's.
+        chosen = by_code.get(code) or []
+        carried = {inbound.get("hook"), inbound.get("topic")} - {None}
+        narrowed = [e for e in chosen if carried & ({e["signal"]} | set(e.get("topics", [])))]
+        return (narrowed or chosen), bool(narrowed)
+    def templates_for(pool):
+        pool = pool or [None] + events
         out = []
         for e in pool:
             t = default_tpl if e is None or "occurrence_key_template" not in e else e["occurrence_key_template"]
             if t is not None and t not in out: out.append(t)
         return out
+    def contents_digest(inbound):
+        # contracts/02 events notes: SHA-256 over the sorted
+        # product_id/variant_id/quantity lines joined by commas, then
+        # |total_price|currency; the first 16 hex characters.
+        part = lambda v: "" if v is None else str(v)
+        lines = sorted(f"{part(l.get('product_id'))}/{part(l.get('variant_id'))}/{part(l.get('quantity'))}" for l in inbound.get("line_items", []))
+        raw = ",".join(lines) + "|" + part(inbound.get("total_price")) + "|" + part(inbound.get("currency"))
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
     for c in cases:
         env = c.get("expect", {}).get("envelope") or {}
         code = env.get("event", {}).get("code")
+        inbound = c.get("given", {}).get("inbound") or {}
         if events and code and code not in by_code:
             err(f, f"case {c['name']!r}: event code {code!r} is not declared in manifest.events")
+        pool, exact = candidates(code, inbound) if code else ([], False)
         props = env.get("event", {}).get("properties")
-        if code in by_code and props is not None:
-            allowed = {p for e in by_code[code] for p in e["properties"]}
+        if pool and props is not None:
+            allowed = {p for e in pool for p in e["properties"]}
             for extra in sorted(set(props) - allowed):
                 err(f, f"case {c['name']!r}: property {extra!r} is outside {code}'s allowlist")
-        keys = [(env.get("correlation") or {}).get("occurrence_key"), code]
-        checks = [keys] if keys[0] is not None else []
+        # Only a delivery that names a declared signal is held to its scopes (a
+        # storefront pixel event can carry the same code under other scopes).
+        if exact and c.get("expect", {}).get("outcome") == "accepted":
+            needed = set.intersection(*[set(e.get("requires_scopes", [])) for e in pool])
+            missing = sorted(needed - set(c.get("requires_scopes", [])))
+            if missing:
+                err(f, f"case {c['name']!r}: emits {code}, which requires {missing}; list them in the case's requires_scopes")
+        key = (env.get("correlation") or {}).get("occurrence_key")
+        checks = [(key, pool)] if key is not None else []
         state = c.get("given", {}).get("state") or {}
-        checks += [(k, None) for k in state.get("already_ingested_occurrences", [])]
-        for key, kcode in checks:
-            tpls = templates_for(kcode)
-            if tpls and not any(template_regex(t).match(key) for t in tpls):
-                err(f, f"case {c['name']!r}: occurrence key {key!r} matches none of {tpls}")
+        checks += [(k, []) for k in state.get("already_ingested_occurrences", [])]
+        for k, kpool in checks:
+            tpls = templates_for(kpool)
+            if tpls and not any(template_regex(t).match(k) for t in tpls):
+                err(f, f"case {c['name']!r}: occurrence key {k!r} matches none of {tpls}")
+        if key is not None and pool and any("{contents_digest}" in (e.get("occurrence_key_template") or "") for e in pool):
+            want = contents_digest(inbound)
+            if not key.endswith(":" + want):
+                err(f, f"case {c['name']!r}: occurrence key {key!r} does not end with the cart contents digest {want!r}")
 
 # ---------------------------------------------------------------- 4h. store consent source fixtures
 # contracts/04, Store consent sources. The schema pins the vocabulary; these

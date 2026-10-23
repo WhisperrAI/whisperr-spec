@@ -212,8 +212,16 @@ them, so the setup proposal, the registry and the fixtures read one table:
 | `requires_scopes` | scopes the signal needs; each must be requested in `auth.scopes` |
 
 Templates use `{name}` placeholders, one key segment each, and start with `{provider}:`. Two
-commerce stores may share a code (`order_paid`, `order_refunded`) only with the same property
-names; a store may add properties to a code only commerce sources own, never change a shared one.
+commerce stores may share a code (`order_paid`, `order_refunded`, `checkout_started`). A property
+name they both project means the same fact in the same unit (`refund_amount_minor`, never a
+second spelling of it); each store may add its own properties, and the app's registry definition
+for the code is the union. A store never changes the meaning or unit of a shared property.
+Playbooks read the per-store names through alias rows, so a connector keeps its own names.
+
+`requires_scopes` lists every scope the signal needs to be observed at all, including scopes a
+read-back needs: a Shopify refund or fulfillment names only the order, so reading the exact
+order's customer needs `read_customers` as well as `read_orders`. A case that expects the event
+lists the same scopes.
 
 ## `health` and `lifecycle`
 
@@ -234,5 +242,7 @@ untouched, and that isolation is a fixture case.
 8. A requested scope never also appears in `never_requests`.
 9. An OAuth connector carries the registered callback verbatim; `approved` is coordinator-set.
 10. When `events` is declared, every signal appears once, needs only requested scopes, and every
-    expected envelope in the fixtures uses a declared code, only that code's allowlisted
-    properties, and an occurrence key its template can produce.
+    expected envelope in the fixtures uses a declared code, only the allowlisted properties of the
+    signal it was delivered as, and an occurrence key its template can produce (a contents digest
+    is recomputed from the case's line items). A case that accepts a declared signal lists the
+    signal's `requires_scopes`.

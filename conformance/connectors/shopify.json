@@ -22,7 +22,7 @@
         {
           "scope": "read_orders",
           "required": true,
-          "why": "order, refund and checkout events, and the exact order's customer for refunds and fulfillments"
+          "why": "order, refund and checkout events, and the exact order read back for refunds and fulfillments"
         },
         {
           "scope": "read_products",
@@ -37,7 +37,7 @@
         {
           "scope": "read_customers",
           "required": true,
-          "why": "customer webhooks and namespace identity links (Shopify refuses customers/* subscriptions without it), and the owner-approved contact email import"
+          "why": "customer webhooks and namespace identity links (Shopify refuses customers/* subscriptions without it), the exact order's customer for refunds and fulfillments, and the owner-approved contact email import"
         },
         {
           "scope": "read_fulfillments",
@@ -134,7 +134,7 @@
         "requires_scopes": [
           "read_orders"
         ],
-        "notes": "catalog_item_* names the highest-value line. sales_channel is online_store, pos, draft_order or app. customer_order_count is a best-effort read when the order is processed, omitted when it fails. Discount code text is never kept."
+        "notes": "catalog_item_* names the highest-value line. sales_channel is online_store, pos, draft_order or app. customer_order_count is a best-effort read of the order's customer when the order is processed (read_orders and read_customers), omitted when it fails. Discount code text is never kept."
       },
       {
         "signal": "orders/create",
@@ -190,7 +190,8 @@
           "refunded_product_ids"
         ],
         "requires_scopes": [
-          "read_orders"
+          "read_orders",
+          "read_customers"
         ],
         "notes": "Sums successful refund transactions only; mixed currencies report no amount. The subject is the exact order's customer, read back from Shopify."
       },
@@ -265,7 +266,8 @@
         "occurrence_key_template": "shopify:order_shipped:{fulfillment_id}",
         "requires_scopes": [
           "read_fulfillments",
-          "read_orders"
+          "read_orders",
+          "read_customers"
         ],
         "notes": "Status success. An update for a fulfillment created more than 29 days ago is not a new shipment. Carrier, tracking numbers, estimated dates and destination are never kept."
       },
@@ -284,7 +286,8 @@
         "occurrence_key_template": "shopify:order_delivered:{fulfillment_id}",
         "requires_scopes": [
           "read_fulfillments",
-          "read_orders"
+          "read_orders",
+          "read_customers"
         ],
         "notes": "shipment_status delivered, once per fulfillment."
       },
@@ -1154,7 +1157,8 @@
       ],
       "requires_scopes": [
         "read_fulfillments",
-        "read_orders"
+        "read_orders",
+        "read_customers"
       ]
     },
     {
@@ -1214,7 +1218,8 @@
       },
       "requires_scopes": [
         "read_fulfillments",
-        "read_orders"
+        "read_orders",
+        "read_customers"
       ]
     },
     {
@@ -1314,7 +1319,8 @@
         "notes": "user_id is the staff member who refunded, never the shopper."
       },
       "requires_scopes": [
-        "read_orders"
+        "read_orders",
+        "read_customers"
       ]
     },
     {

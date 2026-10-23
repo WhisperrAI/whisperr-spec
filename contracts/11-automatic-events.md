@@ -72,7 +72,8 @@ The one exception is a store's own shoppers. For an app whose ICP is `dtc_ecom`,
 actions a commerce connector declares with `counts_as_activity` ([02](02-source-connection-manifest.md),
 `events`) count as activity once the runtime turns commerce activity on
 (`SOURCE_COMMERCE_ACTIVITY_ENABLED`, off by default). Shopify declares `order_paid`,
-`order_placed`, `checkout_started` and `checkout_updated`. Shipping, delivery, refunds,
+`order_placed`, `checkout_started` and `checkout_updated`. WooCommerce declares none yet, so its
+events never count until its manifest declares them. Shipping, delivery, refunds,
 cancellations, customer record changes and history imports never count. Only events written
 while the switch is on count; existing rows are never relabelled, and other ICPs and sources are
 unaffected.
