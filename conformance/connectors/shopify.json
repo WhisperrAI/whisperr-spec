@@ -48,6 +48,11 @@
           "scope": "read_customer_events",
           "required": false,
           "why": "receive storefront pixel events"
+        },
+        {
+          "scope": "unauthenticated_read_product_listings",
+          "required": false,
+          "why": "catalog live check: read a published product's availability, price and URL through the Storefront API at send time, and the store's own product recommendations"
         }
       ],
       "never_requests": [
@@ -95,6 +100,11 @@
             "scope": "read_customers",
             "closed_by": "S34",
             "note": "Optional in the toml already; listed for completeness so the ledger is the single view of the delta."
+          },
+          {
+            "scope": "unauthenticated_read_product_listings",
+            "closed_by": "whisperr-go#629",
+            "note": "Optional. #629 adds it to shopify.app.toml optional_scopes (not deployed). Requested only when the owner turns on live check; the grant mints a Storefront access token stored encrypted. Without it the stored catalog copy is used."
           }
         ]
       }
@@ -375,6 +385,64 @@
       "requires_scopes": [
         "read_products",
         "read_inventory"
+      ]
+    },
+    {
+      "name": "live_check_null_node_falls_back_to_the_stored_copy",
+      "proves": "06 v2: a live check can only narrow an offer. A product the Storefront token cannot see (null node, not published to its channel) is no live answer, never unavailable; only availableForSale false suppresses it.",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "live_check": {
+            "query": "nodes(ids:$ids)",
+            "ids": [
+              "gid://shopify/Product/8471",
+              "gid://shopify/Product/8472"
+            ],
+            "response": {
+              "data": {
+                "nodes": [
+                  null,
+                  {
+                    "id": "gid://shopify/Product/8472",
+                    "availableForSale": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "state": {
+          "catalog": [
+            {
+              "source_item_id": "gid://shopify/Product/8471",
+              "availability": "available"
+            },
+            {
+              "source_item_id": "gid://shopify/Product/8472",
+              "availability": "available"
+            }
+          ],
+          "optional_scopes_granted": [
+            "unauthenticated_read_product_listings"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "catalog": {
+          "live": {
+            "gid://shopify/Product/8471": "no_live_fact_use_stored_copy",
+            "gid://shopify/Product/8472": "unavailable_suppressed_for_this_send"
+          }
+        },
+        "notes": "A live timeout or error also falls back to the stored copy. A live price or URL replaces the stored one for that send only, and a live URL must still pass the URL policy."
+      },
+      "demonstrates_capabilities": [
+        "catalog"
+      ],
+      "requires_scopes": [
+        "unauthenticated_read_product_listings"
       ]
     },
     {

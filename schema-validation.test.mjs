@@ -11,8 +11,8 @@ const root = dirname(fileURLToPath(import.meta.url));
 test('all committed schemas compile and fixtures structurally conform', () => {
   const result = validateSchemas(root);
   assert.deepEqual(result.errors, []);
-  assert.equal(result.schemaCount, 16);
-  assert.equal(result.fixtureCount, 18);
+  assert.equal(result.schemaCount, 18);
+  assert.equal(result.fixtureCount, 19);
 });
 
 for (const [name, file, mutate] of [
@@ -45,6 +45,18 @@ for (const [name, file, mutate] of [
   ['v3 launch with a url and an app version', 'conformance/automatic.json', d => { d.signalsV3.sections.launchSource.cases[0].steps[0].launch.url = 'https://a.example/'; }],
   ['v3 trackError kind outside the enum', 'conformance/automatic.json', d => { d.signalsV3.sections.errors.cases[0].steps[1].trackError.kind = 'js'; }],
   ['v3 fingerprint vector that is not hex', 'conformance/automatic.json', d => { d.signalsV3.fingerprintVectors[0].fingerprint = 'CartLoadError'; }],
+  ['catalog push error body without the error envelope', 'conformance/catalog_push.json', d => { d.cases.find(c => c.name === 'push_disabled_by_owner').exchanges[0].response.body = { code: 'catalog_push_disabled' }; }],
+  ['catalog push error code the server never sends', 'conformance/catalog_push.json', d => { d.cases.find(c => c.name === 'heartbeat_while_a_snapshot_is_open').error.code = 'snapshot_busy'; }],
+  ['catalog push item without updated_at', 'conformance/catalog_push.json', d => { delete d.cases[0].args.items[0].updated_at; }],
+  ['catalog push item with a server-set key', 'conformance/catalog_push.json', d => { d.cases[0].args.items[0].fresh_as_of = '2026-10-23T09:00:00Z'; }],
+  ['catalog push item with a local-time updated_at', 'conformance/catalog_push.json', d => { d.cases[0].args.items[0].updated_at = '2026-10-23T09:00:00+02:00'; }],
+  ['catalog push course that is not type content', 'conformance/catalog_push.json', d => { d.cases[0].args.items[0].kind = 'course'; }],
+  ['catalog push price range with one bound', 'conformance/catalog_push.json', d => { d.cases[0].args.items[0].price_min_minor = 100; }],
+  ['catalog push compare-at price without a currency', 'conformance/catalog_push.json', d => { d.cases[0].args.items[0].compare_at_minor = 100; }],
+  ['catalog push unknown extras key', 'conformance/catalog_push.json', d => { d.cases.find(c => c.name === 'upsert_full_v2_item').args.items[0].extras.description = 'long copy'; }],
+  ['catalog push server reject code outside the list', 'conformance/catalog_push.json', d => { d.cases.find(c => c.name === 'upsert_reports_rejected_items').exchanges[0].response.body.rejected[0].code = 'item_too_large'; }],
+  ['catalog push heartbeat mismatch without stored_count', 'conformance/catalog_push.json', d => { delete d.cases.find(c => c.name === 'heartbeat_count_mismatch').result.stored_count; }],
+  ['catalog push status missing a health field', 'conformance/catalog_push.json', d => { delete d.cases.find(c => c.name === 'status').result.repair; }],
   ['legacy pushOpened step in v2 automatic cases', 'conformance/automatic.json', d => { d.pushEventsV2.cases[0].steps.push({ pushOpened: { whisperr_message_id: 'm' } }); }],
 ]) {
   test(`validator rejects ${name}`, () => {

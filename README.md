@@ -73,6 +73,13 @@ SDK; see [`contracts/10-sdk-compatibility.md`](contracts/10-sdk-compatibility.md
   `automatic.json` → `pushEventsV2`. A harness runs the sections its SDK
   implements and skips the legacy cases each section lists in `supersedes`.
   See [`SPEC.md`](SPEC.md) → Contract v2 conformance.
+- [`conformance/catalog_push.json`](conformance/catalog_push.json) — the
+  **server SDK** catalog push client (contract 06, v2 section): upsert and
+  delete chunking, retries, snapshots, heartbeat, status, error bodies, reject
+  codes and the `toMinorUnits` table. Server SDKs bundle a byte-identical copy
+  and run it; `WHISPERR_CATALOG_SPEC_PATH` points a test run at this file.
+  Items follow [`schemas/catalog-item-v2.schema.json`](schemas/catalog-item-v2.schema.json),
+  the push and feed 1.1 item that whisperr-go's MCP catalog guide also serves.
 - [`schemas/`](schemas) — JSON Schemas for the conformance fixtures, plus the
   wire shapes in `schemas/wire.schema.json` (`identify_body`, `event`,
   `event_context`, `billing_event`).

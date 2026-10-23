@@ -192,6 +192,42 @@
       ]
     },
     {
+      "name": "catalog_term_hook_upserts_the_collection_term",
+      "proves": "06 v2: plugin 1.1.0 fires whisperr/catalog_term on created_product_cat, edited_product_cat and delete_product_cat; the connector upserts (or tombstones) the collection term without rewriting any product",
+      "given": {
+        "inbound": {
+          "hook": "whisperr/catalog_term",
+          "coalesce_key": "term:product_cat:12",
+          "data": {
+            "taxonomy": "product_cat",
+            "term_id": "12",
+            "name": "Shoes",
+            "slug": "shoes",
+            "url": "https://shop.example.com/product-category/shoes/",
+            "deleted": false
+          },
+          "local_seq": "995"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "catalog": {
+          "term": {
+            "kind": "collection",
+            "source_term_id": "woocommerce:product_cat:12",
+            "name": "Shoes",
+            "handle": "shoes",
+            "url": "https://shop.example.com/product-category/shoes/",
+            "tombstoned": false
+          }
+        },
+        "notes": "The same hook with deleted true tombstones the term. Membership comes from each product's categories in woocommerce_update_product. Plugins before 1.1.0 never fire this hook; their products stay without collections and unclassified, so they are never named."
+      },
+      "demonstrates_capabilities": [
+        "catalog"
+      ]
+    },
+    {
       "name": "deactivation_cleans_up",
       "proves": "02: uninstall leaves no residual data or scheduled tasks",
       "given": {

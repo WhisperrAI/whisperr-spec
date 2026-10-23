@@ -1,0 +1,1337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/catalog-push.schema.json",
+  "title": "Whisperr catalog push API v2 (catalog-v2/1)",
+  "description": "Requests and responses of the server-key catalog push API under /v1/catalog (contracts/06, v2 section), and the shape of conformance/catalog_push.json that every server SDK runs. Items are catalog-item-v2.schema.json#/$defs/push_item.",
+  "$ref": "#/$defs/conformance",
+  "$defs": {
+    "item_reject_code": {
+      "description": "Per-item reject codes the server sends in rejected[]. One rejected item never fails the rest of the batch.",
+      "enum": [
+        "invalid_item",
+        "missing_field",
+        "invalid_url",
+        "url_host_not_allowed",
+        "invalid_image_url",
+        "invalid_price",
+        "invalid_currency",
+        "invalid_kind",
+        "revision_conflict"
+      ]
+    },
+    "client_reject_code": {
+      "description": "Per-item codes an SDK adds to rejected[] itself, without sending the item. item_too_large: the item alone encodes to more than the 2 MiB body limit, so no batch can carry it. The server never sends these.",
+      "enum": [
+        "item_too_large"
+      ]
+    },
+    "error_code": {
+      "description": "Request-level error codes, always in the body {\"error\":{\"code\",\"message\"}}. route_not_implemented (404) means the push API is off for this deployment; SDKs and tools feature-detect it. rate_limited and 5xx answers are retried.",
+      "enum": [
+        "invalid_api_key",
+        "missing_api_key",
+        "server_key_required",
+        "route_not_implemented",
+        "invalid_request",
+        "batch_too_large",
+        "catalog_push_disabled",
+        "catalog_source_unavailable",
+        "snapshot_not_open",
+        "snapshot_open",
+        "rate_limited"
+      ]
+    },
+    "error_envelope": {
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/error_code"
+            },
+            "message": {
+              "type": "string"
+            },
+            "details": {},
+            "request_id": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
+    },
+    "item_reject": {
+      "type": "object",
+      "required": [
+        "index",
+        "source_item_id",
+        "code",
+        "message"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index into the request's items (the SDK maps it back to the caller's list)."
+        },
+        "source_item_id": {
+          "type": "string"
+        },
+        "code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/item_reject_code"
+            },
+            {
+              "$ref": "#/$defs/client_reject_code"
+            }
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "server_item_reject": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/item_reject"
+        },
+        {
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/item_reject_code"
+            }
+          }
+        }
+      ]
+    },
+    "batch_request": {
+      "type": "object",
+      "required": [
+        "items"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/catalog-item-v2.schema.json#/$defs/push_item"
+          }
+        }
+      }
+    },
+    "batch_response": {
+      "type": "object",
+      "required": [
+        "accepted",
+        "applied",
+        "unchanged",
+        "ignored_older",
+        "rejected"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "applied + unchanged + ignored_older."
+        },
+        "applied": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unchanged": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Content equal to the stored copy; only freshness moved."
+        },
+        "ignored_older": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "updated_at older than the stored copy."
+        },
+        "rejected": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/server_item_reject"
+          }
+        }
+      }
+    },
+    "delete_input": {
+      "type": "object",
+      "required": [
+        "source_item_id",
+        "deleted_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "source_item_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "deleted_at": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "delete_request": {
+      "type": "object",
+      "required": [
+        "items"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/delete_input"
+          }
+        }
+      }
+    },
+    "delete_response": {
+      "type": "object",
+      "required": [
+        "deleted",
+        "ignored_older",
+        "not_found",
+        "rejected"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "deleted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ignored_older": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "not_found": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejected": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/server_item_reject"
+          }
+        }
+      }
+    },
+    "snapshot_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+    },
+    "snapshot_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "snapshot_response": {
+      "type": "object",
+      "required": [
+        "snapshot_id",
+        "started_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "snapshot_id": {
+          "$ref": "#/$defs/snapshot_id"
+        },
+        "started_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2})$"
+        }
+      }
+    },
+    "count_request": {
+      "type": "object",
+      "required": [
+        "item_count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "item_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "complete_response": {
+      "type": "object",
+      "required": [
+        "tombstoned",
+        "item_count",
+        "state"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "tombstoned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "item_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "state": {
+          "const": "ready"
+        }
+      }
+    },
+    "heartbeat_response": {
+      "type": "object",
+      "required": [
+        "refreshed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "refreshed": {
+          "type": "boolean"
+        },
+        "reason": {
+          "const": "count_mismatch"
+        },
+        "stored_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "if": {
+        "properties": {
+          "refreshed": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "reason",
+          "stored_count"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "reason"
+              ]
+            },
+            {
+              "required": [
+                "stored_count"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "nullable_time": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "source_health": {
+      "type": "object",
+      "description": "whisperr-go catalog.SourceHealth; GET /v1/catalog/status answers it for the app's custom_code source.",
+      "required": [
+        "connection_id",
+        "provider",
+        "mode",
+        "state",
+        "item_count",
+        "available_count",
+        "unclassified_count",
+        "excluded_count",
+        "freshness_seconds",
+        "newest_fresh_as_of",
+        "last_success_at",
+        "last_push_at",
+        "last_heartbeat_at",
+        "last_error",
+        "issue_count",
+        "rejected_host",
+        "repair",
+        "repair_path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "connection_id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "connector",
+            "feed",
+            "push",
+            "push_feed"
+          ]
+        },
+        "state": {
+          "enum": [
+            "missing",
+            "pending_confirmation",
+            "awaiting_first_sync",
+            "ready",
+            "ready_with_exclusions",
+            "stale",
+            "failing",
+            "disabled"
+          ]
+        },
+        "item_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "available_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unclassified_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "excluded_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "freshness_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "newest_fresh_as_of": {
+          "$ref": "#/$defs/nullable_time"
+        },
+        "last_success_at": {
+          "$ref": "#/$defs/nullable_time"
+        },
+        "last_push_at": {
+          "$ref": "#/$defs/nullable_time"
+        },
+        "last_heartbeat_at": {
+          "$ref": "#/$defs/nullable_time"
+        },
+        "last_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "issue_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejected_host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repair": {
+          "enum": [
+            "none",
+            "open_feed_settings",
+            "reconnect",
+            "run_full_sync",
+            "confirm_feed",
+            "add_url_host"
+          ]
+        },
+        "repair_path": {
+          "type": "string"
+        }
+      }
+    },
+    "exchange": {
+      "type": "object",
+      "required": [
+        "request",
+        "response"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "request": {
+          "type": "object",
+          "required": [
+            "method",
+            "path"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "enum": [
+                "GET",
+                "POST"
+              ]
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^/v1/catalog/"
+            },
+            "body": {
+              "type": "object"
+            },
+            "item_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "item_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "first_item_id": {
+              "type": "string"
+            },
+            "last_item_id": {
+              "type": "string"
+            },
+            "same_body_as_previous": {
+              "const": true
+            }
+          },
+          "dependentRequired": {
+            "item_count": [
+              "first_item_id",
+              "last_item_id"
+            ]
+          }
+        },
+        "response": {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599
+            },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "body": {}
+          },
+          "if": {
+            "required": [
+              "body"
+            ],
+            "properties": {
+              "status": {
+                "minimum": 400
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "body": {
+                "$ref": "#/$defs/error_envelope"
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "properties": {
+                  "path": {
+                    "pattern": "^/v1/catalog/items/batch$"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "request": {
+                "properties": {
+                  "body": {
+                    "$ref": "#/$defs/batch_request"
+                  }
+                }
+              },
+              "response": {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": 200
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/batch_response"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "properties": {
+                  "path": {
+                    "pattern": "^/v1/catalog/items/delete$"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "request": {
+                "properties": {
+                  "body": {
+                    "$ref": "#/$defs/delete_request"
+                  }
+                }
+              },
+              "response": {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": 200
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/delete_response"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "properties": {
+                  "path": {
+                    "pattern": "^/v1/catalog/snapshots$"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "request": {
+                "properties": {
+                  "body": {
+                    "$ref": "#/$defs/snapshot_request"
+                  }
+                }
+              },
+              "response": {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": 200
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/snapshot_response"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "properties": {
+                  "path": {
+                    "pattern": "^/v1/catalog/snapshots/[A-Za-z0-9_-]{1,64}/complete$"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "request": {
+                "properties": {
+                  "body": {
+                    "$ref": "#/$defs/count_request"
+                  }
+                }
+              },
+              "response": {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": 200
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/complete_response"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "properties": {
+                  "path": {
+                    "pattern": "^/v1/catalog/heartbeat$"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "request": {
+                "properties": {
+                  "body": {
+                    "$ref": "#/$defs/count_request"
+                  }
+                }
+              },
+              "response": {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": 200
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/heartbeat_response"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "request": {
+                "properties": {
+                  "path": {
+                    "pattern": "^/v1/catalog/status$"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "request": {
+                "properties": {
+                  "method": {
+                    "const": "GET"
+                  }
+                },
+                "not": {
+                  "required": [
+                    "body"
+                  ]
+                }
+              },
+              "response": {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": 200
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/source_health"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "description": "One request the SDK must send and the answer the test server gives. A request carries the whole body, or only the ids it must contain (item_ids), or, for generated batches, a count with the first and last id."
+    },
+    "case_error": {
+      "description": "local: the SDK refuses before sending (a configuration error). configuration: a configuration error before anything is sent (a publishable key). Otherwise the SDK raises its catalog error with this status and code.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "local"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "local": {
+              "const": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "configuration"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "configuration": {
+              "const": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "status",
+            "code",
+            "retryable"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "type": "integer",
+              "minimum": 400
+            },
+            "code": {
+              "$ref": "#/$defs/error_code"
+            },
+            "retryable": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "case": {
+      "type": "object",
+      "required": [
+        "name",
+        "op",
+        "args",
+        "exchanges"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "proves": {
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "upsert",
+            "delete",
+            "begin_snapshot",
+            "complete_snapshot",
+            "heartbeat",
+            "status"
+          ]
+        },
+        "api_key": {
+          "type": "string"
+        },
+        "args": {
+          "type": "object"
+        },
+        "exchanges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/exchange"
+          }
+        },
+        "result": {},
+        "error": {
+          "$ref": "#/$defs/case_error"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "result"
+          ]
+        },
+        {
+          "required": [
+            "error"
+          ]
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "upsert"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "args": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/catalog-item-v2.schema.json#/$defs/push_item"
+                    }
+                  },
+                  "generate_items": {
+                    "type": "object",
+                    "required": [
+                      "count",
+                      "source_item_id_prefix",
+                      "template"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "source_item_id_prefix": {
+                        "type": "string"
+                      },
+                      "template": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                },
+                "oneOf": [
+                  {
+                    "required": [
+                      "items"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "generate_items"
+                    ]
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/$defs/batch_result"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "delete"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "args": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/delete_input"
+                    }
+                  },
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "generate_ids": {
+                    "type": "object",
+                    "required": [
+                      "count",
+                      "prefix"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "prefix": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "deleted_at": {
+                    "$ref": "#/$defs/time"
+                  }
+                },
+                "oneOf": [
+                  {
+                    "required": [
+                      "items"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "ids",
+                      "deleted_at"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "generate_ids",
+                      "deleted_at"
+                    ]
+                  }
+                ]
+              },
+              "result": {
+                "$ref": "#/$defs/delete_result"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "begin_snapshot"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "args": {
+                "maxProperties": 0
+              },
+              "result": {
+                "$ref": "#/$defs/snapshot_response"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "complete_snapshot"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "args": {
+                "type": "object",
+                "required": [
+                  "snapshot_id",
+                  "item_count"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "snapshot_id": {
+                    "type": "string"
+                  },
+                  "item_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "result": {
+                "$ref": "#/$defs/complete_response"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "heartbeat"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "args": {
+                "$ref": "#/$defs/count_request"
+              },
+              "result": {
+                "$ref": "#/$defs/heartbeat_response"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "status"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "args": {
+                "maxProperties": 0
+              },
+              "result": {
+                "$ref": "#/$defs/source_health"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "conformance": {
+      "type": "object",
+      "required": [
+        "$schema",
+        "contract",
+        "description",
+        "limits",
+        "reject_codes",
+        "minor_units",
+        "cases"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "contract": {
+          "const": "catalog-v2/1"
+        },
+        "description": {
+          "type": "string"
+        },
+        "limits": {
+          "type": "object",
+          "required": [
+            "upsert_batch",
+            "delete_batch",
+            "max_body_bytes"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "upsert_batch": {
+              "const": 500
+            },
+            "delete_batch": {
+              "const": 1000
+            },
+            "max_body_bytes": {
+              "const": 2097152
+            }
+          }
+        },
+        "reject_codes": {
+          "type": "object",
+          "required": [
+            "server",
+            "client"
+          ],
+          "additionalProperties": false,
+          "description": "The full lists, so every SDK can check it knows each code. validate.py ties them to the enums above.",
+          "properties": {
+            "server": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/item_reject_code"
+              }
+            },
+            "client": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/client_reject_code"
+              }
+            }
+          }
+        },
+        "minor_units": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "amount",
+              "currency"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "amount": {
+                "type": "string"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "minor": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "error": {
+                "enum": [
+                  "invalid_amount",
+                  "invalid_currency"
+                ]
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "minor"
+                ]
+              },
+              {
+                "required": [
+                  "error"
+                ]
+              }
+            ]
+          }
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/case"
+          }
+        }
+      }
+    },
+    "batch_result": {
+      "type": "object",
+      "required": [
+        "accepted",
+        "applied",
+        "unchanged",
+        "ignored_older",
+        "rejected"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "applied + unchanged + ignored_older."
+        },
+        "applied": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unchanged": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Content equal to the stored copy; only freshness moved."
+        },
+        "ignored_older": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "updated_at older than the stored copy."
+        },
+        "rejected": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/item_reject"
+          }
+        }
+      },
+      "description": "What the SDK returns for a batch call: the batch responses summed over chunks, reject indexes mapped back to the caller's list, plus any client-side rejects."
+    },
+    "delete_result": {
+      "type": "object",
+      "required": [
+        "deleted",
+        "ignored_older",
+        "not_found",
+        "rejected"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "deleted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ignored_older": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "not_found": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejected": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/item_reject"
+          }
+        }
+      },
+      "description": "What the SDK returns for a delete call: the delete responses summed over chunks, reject indexes mapped back to the caller's list, plus any client-side rejects."
+    }
+  }
+}

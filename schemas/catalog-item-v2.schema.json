@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/catalog-item-v2.schema.json",
+  "title": "Whisperr catalog item input v2 (push API and feed schema_version 1.1)",
+  "description": "One catalog item as a customer server sends it: an element of POST /v1/catalog/items/batch, or an item of a schema_version 1.1 feed page (contracts/06, v2 section). This is whisperr-go internal/catalog.CatalogItemInput. No descriptions, no image bytes. Prices are integers in minor units (cents). source_item_id is stable and equals the product_id the app's tracked events carry. connection_id, fresh_as_of and approved_fields are server-set and forbidden here. The push API also requires updated_at: use #/$defs/push_item for a pushed item.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_item_id", "type", "name", "availability"],
+  "properties": {
+    "source_item_id": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S", "description": "Stable id of the item in the customer's system; the same value as product_id in tracked events. Becomes the item's external_id."},
+    "type": {"enum": ["product", "plan", "content", "location", "offer"], "description": "The rc3 projection type."},
+    "kind": {"enum": ["product", "content", "course", "plan", "location", "offer"], "description": "Defaults to type. course needs type content; every other kind equals type."},
+    "name": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"},
+    "availability": {"enum": ["available", "limited", "unavailable", "unknown"], "description": "limited: low stock, preorder or backorder. unknown and unavailable are never offered."},
+    "updated_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$", "description": "When the item last changed in the customer's system, RFC 3339 in UTC (Z). Required for push (it orders writes); optional in a feed (the page's generated_at is used)."},
+    "url": {"type": "string", "minLength": 1, "maxLength": 2048, "description": "https:// URL on an allowed host, or an approved app deep link. A host outside the source's URL policy is rejected with url_host_not_allowed."},
+    "price": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount_minor", "currency"],
+      "properties": {
+        "amount_minor": {"type": "integer", "minimum": 0, "description": "Lowest current price among the available variants, in minor units."},
+        "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+        "meaning": {"enum": ["list", "fixed", "from", "display_only"]}
+      }
+    },
+    "category": {"type": "string", "maxLength": 128},
+    "location": {"type": "string", "maxLength": 128},
+    "source_version": {"type": "string", "maxLength": 256},
+    "localizations": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {"pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"},
+          "description": {"type": "string", "maxLength": 2048}
+        }
+      }
+    },
+    "references": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["relation", "source_item_id"],
+        "properties": {
+          "relation": {"enum": ["parent", "available_at", "applies_to", "product_source"]},
+          "source_item_id": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S", "description": "Another item of the same source; never the item itself."}
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "type", "target"],
+      "description": "A read-only destination, never a purchase or redemption command.",
+      "properties": {
+        "version": {"const": 1},
+        "type": {"const": "view_item"},
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id"],
+          "properties": {
+            "kind": {"enum": ["product", "plan", "content", "location", "offer"]},
+            "id": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S"},
+            "location_id": {"type": "string", "maxLength": 512}
+          }
+        }
+      }
+    },
+    "offer_terms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "buy_quantity", "free_quantity", "requires_membership", "eligibility"],
+      "description": "Only on type offer.",
+      "properties": {
+        "kind": {"const": "buy_x_get_y"},
+        "buy_quantity": {"type": "integer", "minimum": 1, "maximum": 100},
+        "free_quantity": {"type": "integer", "minimum": 1, "maximum": 100},
+        "requires_membership": {"type": "boolean"},
+        "eligibility": {"const": "conditional"},
+        "summary": {"type": "string", "maxLength": 512}
+      }
+    },
+    "image_url": {"type": "string", "maxLength": 2048, "pattern": "^https://", "description": "Main image URL (https, port 443; any CDN host, not limited to the URL policy). Never image bytes."},
+    "compare_at_minor": {"type": "integer", "minimum": 0, "description": "Regular price when the item is on sale."},
+    "price_min_minor": {"type": "integer", "minimum": 0, "description": "Lowest price over all sellable variants, ignoring stock. Set together with price_max_minor."},
+    "price_max_minor": {"type": "integer", "minimum": 0, "description": "Highest price over all sellable variants, ignoring stock. At least price_min_minor."},
+    "currency": {"type": "string", "pattern": "^[A-Z]{3}$", "description": "Required when price is absent and any *_minor price is set; otherwise equal to price.currency."},
+    "any_variant_in_stock": {"type": "boolean"},
+    "product_type": {"type": "string", "maxLength": 255},
+    "brand": {"type": "string", "maxLength": 128},
+    "collections": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 512, "description": "Stable id of the collection or category in the customer's system."},
+          "name": {"type": "string", "minLength": 1, "maxLength": 255},
+          "handle": {"type": "string", "minLength": 1, "maxLength": 255},
+          "url": {"type": "string", "maxLength": 2048, "pattern": "^https://", "description": "Dropped (the collection is kept) when it fails the source's URL policy."}
+        }
+      }
+    },
+    "tags": {"type": "array", "maxItems": 32, "items": {"type": "string", "minLength": 1, "maxLength": 64}, "description": "Trimmed and deduplicated case-insensitively by the server; a tag over 64 characters is dropped."},
+    "extras": {
+      "type": "object",
+      "description": "At most 512 bytes in total; string values of at most 64 characters. An extras object that breaks these rules is dropped whole (issue invalid_extras); the item is kept.",
+      "additionalProperties": false,
+      "properties": {
+        "size": {"type": "string", "maxLength": 64}, "color": {"type": "string", "maxLength": 64}, "material": {"type": "string", "maxLength": 64},
+        "pattern": {"type": "string", "maxLength": 64}, "gender": {"type": "string", "maxLength": 64}, "age_group": {"type": "string", "maxLength": 64},
+        "condition": {"type": "string", "maxLength": 64}, "google_product_category": {"type": "string", "maxLength": 64}, "unit": {"type": "string", "maxLength": 64},
+        "flavor": {"type": "string", "maxLength": 64}, "scent": {"type": "string", "maxLength": 64}
+      }
+    },
+    "published_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$", "description": "RFC 3339 in UTC (Z). A newly seen in-stock item published in the last 30 days records a published change."},
+    "gift_card": {"type": "boolean", "description": "Gift cards are never named as products."},
+    "variants": {
+      "type": "array",
+      "maxItems": 100,
+      "description": "Stored only for variants a flow watches; the item fields above stay the summary.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["variant_id", "availability"],
+        "properties": {
+          "variant_id": {"type": "string", "minLength": 1, "maxLength": 512},
+          "title": {"type": "string", "maxLength": 256},
+          "availability": {"enum": ["available", "limited", "unavailable", "unknown"]},
+          "price_minor": {"type": "integer", "minimum": 0},
+          "compare_at_minor": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  },
+  "dependentRequired": {
+    "price_min_minor": ["price_max_minor"],
+    "price_max_minor": ["price_min_minor"]
+  },
+  "allOf": [
+    {
+      "if": {"not": {"required": ["price"]}, "anyOf": [{"required": ["compare_at_minor"]}, {"required": ["price_min_minor"]}, {"required": ["price_max_minor"]}]},
+      "then": {"required": ["currency"]}
+    },
+    {"if": {"required": ["kind"], "properties": {"kind": {"const": "course"}}}, "then": {"properties": {"type": {"const": "content"}}}},
+    {"if": {"required": ["kind"], "properties": {"kind": {"const": "product"}}}, "then": {"properties": {"type": {"const": "product"}}}},
+    {"if": {"required": ["kind"], "properties": {"kind": {"const": "content"}}}, "then": {"properties": {"type": {"const": "content"}}}},
+    {"if": {"required": ["kind"], "properties": {"kind": {"const": "plan"}}}, "then": {"properties": {"type": {"const": "plan"}}}},
+    {"if": {"required": ["kind"], "properties": {"kind": {"const": "location"}}}, "then": {"properties": {"type": {"const": "location"}}}},
+    {"if": {"required": ["kind"], "properties": {"kind": {"const": "offer"}}}, "then": {"properties": {"type": {"const": "offer"}}}},
+    {"if": {"required": ["offer_terms"]}, "then": {"properties": {"type": {"const": "offer"}}}}
+  ],
+  "$defs": {
+    "push_item": {
+      "description": "A pushed item: the item schema with updated_at required.",
+      "allOf": [{"$ref": "#"}, {"required": ["updated_at"]}]
+    },
+    "feed_page": {
+      "type": "object",
+      "description": "One page of a schema_version 1.1 JSON pull feed. Whisperr fetches the endpoint, then the endpoint with ?cursor=<next_cursor> until complete is true. Every page of one snapshot repeats snapshot_id, generated_at, total_items and schema_version.",
+      "required": ["schema_version", "snapshot_id", "generated_at", "total_items", "items", "complete", "next_cursor", "issues"],
+      "properties": {
+        "schema_version": {"const": "1.1"},
+        "snapshot_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "generated_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2})$"},
+        "total_items": {"type": "integer", "minimum": 0},
+        "items": {"type": "array", "maxItems": 200, "items": {"$ref": "#"}},
+        "complete": {"type": "boolean"},
+        "next_cursor": {"type": ["string", "null"], "description": "null exactly when complete is true."},
+        "issues": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {"code": {"type": "string"}, "source_item_id": {"type": "string"}, "message": {"type": "string"}}
+          }
+        }
+      },
+      "if": {"properties": {"complete": {"const": true}}},
+      "then": {"properties": {"next_cursor": {"type": "null"}}},
+      "else": {"properties": {"next_cursor": {"type": "string", "minLength": 1}}}
+    }
+  }
+}
