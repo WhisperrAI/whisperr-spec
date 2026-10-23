@@ -31,6 +31,7 @@ inbound delivery
 | `payload_too_large` | over the per-connector size limit |
 | `content_type_invalid` | wrong content type |
 | `contract_version_unsupported` | envelope/manifest version this build cannot handle |
+| `invalid_request` | an authenticated delivery that breaks the connector's wire rules (a 400), e.g. a WooCommerce consent with an impossible field combination |
 
 Rejection happens **before** anything durable is written, per the F12 order: verify signature and
 timestamp → validate size and content type → extract the allowlisted projection → atomically

@@ -315,9 +315,17 @@
             "string",
             "null"
           ],
-          "description": "null = this connector cannot derive a stable occurrence key; its events are never correlated."
+          "description": "The connector's default occurrence key derivation, for every event in `events` that does not declare its own. Placeholders are `{name}` tokens and the literal prefix is `{provider}:`. null = this connector cannot derive a stable occurrence key; its events are never correlated."
         }
       }
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/event"
+      },
+      "description": "Optional (2.0.0-rc8). The event contract: each provider signal the connector projects, the event code it becomes, the projection allowlist, and the occurrence key derivation when it differs from correlation.occurrence_key_template. One signal means one code; several signals may share a code (a live and a historical order). CI checks each fixture case's expected envelope against it."
     },
     "freshness": {
       "type": "object",
@@ -408,6 +416,78 @@
         "delivery_credential"
       ],
       "description": "Enforced at issuance AND at use. An mcp_credential must never be usable as an ingestion or provider credential."
+    },
+    "event": {
+      "type": "object",
+      "required": [
+        "signal",
+        "code",
+        "properties"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "signal": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+(/[a-z0-9_]+)*$",
+          "description": "The provider signal: a webhook topic, a virtual signal one topic carries (Shopify `checkouts/started`), or a plugin hook (WooCommerce). Unique within the manifest."
+        },
+        "topics": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(/[a-z0-9_]+)*$"
+          },
+          "description": "The delivery topics that carry this signal, when they differ from the signal. A delivery is accepted once per selected signal it carries; a deselected sibling signal on the same topic is never accepted."
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+        },
+        "properties": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+          },
+          "description": "The projection allowlist (contracts/01 invariant 7). Nothing else from the provider payload is stored. Empty = the event carries no properties."
+        },
+        "occurrence_key_template": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Overrides correlation.occurrence_key_template for this signal. Used when a repeated delivery must collapse to one occurrence (one checkout start per checkout, one delivery per fulfillment)."
+        },
+        "suggested": {
+          "type": "boolean",
+          "default": true,
+          "description": "false = offered at setup but never pre-selected (Shopify order_placed duplicates order_paid for most stores)."
+        },
+        "historical": {
+          "type": "boolean",
+          "default": false,
+          "description": "true = the signal only ever carries history imports. It never counts as live coverage and needs capabilities.history."
+        },
+        "counts_as_activity": {
+          "type": "boolean",
+          "default": false,
+          "description": "A commerce shopper action that may count as user activity (contracts/11, Commerce activity). Commerce connectors only; never a historical signal."
+        },
+        "requires_scopes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          },
+          "description": "Scopes the signal needs. CI fails when one is not requested in auth.scopes."
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
     }
   }
 }

@@ -1,0 +1,145 @@
+{
+  "$schema": "../../schemas/consent-source-fixture.schema.json",
+  "version": 1,
+  "provider": "woocommerce",
+  "description": "WooCommerce consent sources: which store checkbox counts as the shopper's marketing email consent (contracts/04, Store consent sources). whisperr-go keeps a verbatim copy in internal/connectors/woocommerce/testdata/woocommerce_consent_sources.json.",
+  "cases": [
+    {
+      "name": "third_party_opt_in_needs_owner_attestation",
+      "proves": "Without an owner-confirmed source, a third-party opt-in is ignored",
+      "given": {
+        "attested": false,
+        "inbound": {"hook": "whisperr/marketing_consent", "data": {"state": "subscribed", "surface": "checkout", "source": "mailpoet", "attestation_id": "wca_UNCONFIRMED"}}
+      },
+      "expect": {"outcome": "superseded", "repair_action": "The store owner has not confirmed this consent source; the consent was not recorded.", "consent": [], "channel": {"stored": false}}
+    },
+    {
+      "name": "attested_third_party_opt_in_is_a_store_opt_in",
+      "proves": "An opt-in from the owner-confirmed source is consent, cites its source and attestation, and makes the address sendable as a store opt-in",
+      "given": {
+        "attested": true,
+        "setup": {"consent_source": {"kind": "mailpoet", "confirmed": true}},
+        "inbound": {"hook": "whisperr/marketing_consent", "data": {"state": "subscribed", "surface": "checkout", "source": "mailpoet"}}
+      },
+      "expect": {
+        "outcome": "completed",
+        "consent": [{"status": "opted_in", "basis": "imported_record", "evidence_ref": "woocommerce:{delivery_id}:mailpoet:{attestation_id}"}],
+        "channel": {"stored": true, "opted_in": true, "verified": true, "verified_by": "store_opt_in"}
+      }
+    },
+    {
+      "name": "custom_hook_cites_its_source_detail",
+      "proves": "The store's own code names its checkbox; the name is part of the evidence",
+      "given": {
+        "attested": true,
+        "setup": {"consent_source": {"kind": "custom_hook", "confirmed": true}},
+        "inbound": {"hook": "whisperr/marketing_consent", "data": {"state": "subscribed", "surface": "custom_code", "source": "custom_hook", "source_detail": "footer-form"}}
+      },
+      "expect": {
+        "outcome": "completed",
+        "consent": [{"status": "opted_in", "basis": "imported_record", "evidence_ref": "woocommerce:{delivery_id}:custom_hook:{attestation_id}:footer-form"}],
+        "channel": {"stored": true, "opted_in": true, "verified": true, "verified_by": "store_opt_in"}
+      }
+    },
+    {
+      "name": "existing_subscriber_is_imported_with_the_original_time",
+      "proves": "A subscriber the confirmed source had before the owner confirmed it is consent; the evidence names the source, the attestation, the original opt-in time and the confirmation time",
+      "given": {
+        "attested": true,
+        "setup": {"consent_source": {"kind": "mailpoet", "confirmed": true}},
+        "inbound": {"hook": "whisperr/marketing_consent", "data": {"state": "subscribed", "surface": "store_sync", "source": "mailpoet", "backfill": true, "captured_at": "2025-03-01T09:00:00Z"}}
+      },
+      "expect": {
+        "outcome": "completed",
+        "consent": [{"status": "opted_in", "basis": "imported_record", "evidence_ref": "woocommerce:{delivery_id}:mailpoet:{attestation_id}:backfill:20250301T090000Z:{confirmed_at}"}],
+        "channel": {"stored": true, "opted_in": true, "verified": true, "verified_by": "store_opt_in"}
+      }
+    },
+    {
+      "name": "existing_subscriber_without_a_time_is_imported_as_unknown",
+      "proves": "A source that keeps no opt-in time sends null; the opt-in is stamped at the confirmation and its evidence says unknown",
+      "given": {
+        "attested": true,
+        "setup": {"consent_source": {"kind": "mailchimp_for_woocommerce", "confirmed": true}},
+        "inbound": {"hook": "whisperr/marketing_consent", "data": {"state": "subscribed", "surface": "store_sync", "source": "mailchimp_for_woocommerce", "backfill": true, "captured_at": null}}
+      },
+      "expect": {
+        "outcome": "completed",
+        "consent": [{"status": "opted_in", "basis": "imported_record", "evidence_ref": "woocommerce:{delivery_id}:mailchimp_for_woocommerce:{attestation_id}:backfill:unknown:{confirmed_at}"}],
+        "channel": {"stored": true, "opted_in": true, "verified": true, "verified_by": "store_opt_in"}
+      }
+    },
+    {
+      "name": "backfill_needs_owner_attestation",
+      "proves": "An existing subscriber counts only once the owner confirmed the source",
+      "given": {
+        "attested": false,
+        "inbound": {"hook": "whisperr/marketing_consent", "data": {"state": "subscribed", "surface": "store_sync", "source": "mailpoet", "attestation_id": "wca_UNCONFIRMED", "backfill": true, "captured_at": null}}
+      },
+      "expect": {"outcome": "superseded", "repair_action": "The store owner has not confirmed this consent source; the consent was not recorded.", "consent": [], "channel": {"stored": false}}
+    },
+    {
+      "name": "backfill_is_an_opt_in_from_a_third_party_source",
+      "proves": "Only a third-party opt-in may be a backfill, and only a backfill may come without a time",
+      "given": {"inbound": {"hook": "whisperr/marketing_consent", "data": {"state": "unsubscribed", "surface": "store_sync", "source": "mailpoet", "attestation_id": "wca_ANY", "backfill": true}}},
+      "expect": {"outcome": "rejected", "rejection_code": "invalid_request"}
+    },
+    {
+      "name": "own_checkbox_is_never_a_backfill",
+      "proves": "The plugin's own checkbox records a tick, never an imported list",
+      "given": {"inbound": {"hook": "whisperr/marketing_consent", "data": {"state": "subscribed", "surface": "checkout", "source": "whisperr_checkbox", "backfill": true}}},
+      "expect": {"outcome": "rejected", "rejection_code": "invalid_request"}
+    },
+    {
+      "name": "only_a_backfill_may_have_no_time",
+      "proves": "A live consent always says when it was given",
+      "given": {"inbound": {"hook": "whisperr/marketing_consent", "data": {"state": "subscribed", "surface": "checkout", "source": "whisperr_checkbox", "captured_at": null}}},
+      "expect": {"outcome": "rejected", "rejection_code": "invalid_request"}
+    },
+    {
+      "name": "third_party_opt_out_always_counts",
+      "proves": "An opt-out wins, from any known source, confirmed or not",
+      "given": {
+        "attested": false,
+        "inbound": {"hook": "whisperr/marketing_consent", "data": {"state": "unsubscribed", "surface": "store_sync", "source": "mailpoet", "attestation_id": "wca_UNCONFIRMED"}}
+      },
+      "expect": {"outcome": "completed", "consent": [{"status": "opted_out", "basis": "explicit_user_action", "evidence_ref": "woocommerce:{delivery_id}:mailpoet"}], "channel": {"stored": false}}
+    },
+    {
+      "name": "third_party_consent_without_attestation_id_is_rejected",
+      "proves": "Only the plugin's own checkbox may come without an attestation",
+      "given": {"inbound": {"hook": "whisperr/marketing_consent", "data": {"state": "subscribed", "surface": "checkout", "source": "klaviyo"}}},
+      "expect": {"outcome": "rejected", "rejection_code": "invalid_request"}
+    },
+    {
+      "name": "consent_source_needs_owner_confirmation",
+      "proves": "The owner chooses one source and confirms it asks for marketing consent; anything else is refused",
+      "given": {
+        "setups": [
+          {"consent_source": {"kind": "mailpoet", "confirmed": false}},
+          {"consent_source": {"kind": "everything", "confirmed": true}},
+          {"consent_source": {"kind": "custom_meta", "confirmed": true}},
+          {"consent_source": {"kind": "mailpoet", "confirmed": true, "meta": {"scope": "order", "key": "_newsletter", "value": "yes"}}},
+          {"consent_source": {"kind": "custom_meta", "confirmed": true, "meta": {"scope": "order", "key": "_whisperr_marketing_consent", "value": "yes"}}},
+          {"consent_source": {"kind": "custom_meta", "confirmed": true, "meta": {"scope": "session", "key": "_newsletter", "value": "yes"}}},
+          {"consent_source": {"kind": "custom_meta", "confirmed": true, "meta": {"scope": "order", "key": "_newsletter", "value": "  "}}}
+        ]
+      },
+      "expect": {"outcome": "rejected", "rejection_code": "invalid_request", "attestations": 0}
+    },
+    {
+      "name": "heartbeat_reports_detected_consent_plugins",
+      "proves": "Known consent plugins are kept once each; unknown ones are dropped, not rejected; a heartbeat without the field keeps them",
+      "given": {
+        "inbound": {"hook": "whisperr/heartbeat", "data": {"queue_depth": 0, "queue_oldest_seconds": 0, "dead_count": 0, "consent_plugins": [{"id": "klaviyo", "version": "3.4.0"}, {"id": "newsletter-pro", "version": "1.0"}, {"id": "mailpoet", "version": "5.3.1"}, {"id": "mailpoet", "version": "5.3.1"}]}}
+      },
+      "expect": {"outcome": "accepted", "detected_plugins": [{"id": "mailpoet", "version": "5.3.1"}, {"id": "klaviyo", "version": "3.4.0"}]}
+    },
+    {
+      "name": "purchase_never_verifies_an_address",
+      "proves": "An address from an order is stored pending, never verified or opted in",
+      "given": {"setup": {"contact_sync": "all"}, "inbound": {"hook": "woocommerce_payment_complete"}},
+      "expect": {"outcome": "accepted", "consent": [], "channel": {"stored": true, "opted_in": false, "verified": false}}
+    }
+  ]
+}

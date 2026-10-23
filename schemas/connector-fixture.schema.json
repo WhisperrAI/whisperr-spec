@@ -126,6 +126,9 @@
               ],
               "description": "Expected consent assertions. null or [] means NONE — the usual assertion for auth/billing/commerce events."
             },
+            "channel": {
+              "$ref": "#/$defs/channel_effect"
+            },
             "catalog": {
               "type": "object"
             },
@@ -159,6 +162,91 @@
           "description": "Provider scopes/permissions this case's behavior actually needs. CI fails when a case requires a scope the manifest does not request — this is how a connector stops claiming behavior its authorization cannot deliver."
         }
       }
+    },
+    "channel_effect": {
+      "type": "object",
+      "required": [
+        "stored"
+      ],
+      "additionalProperties": false,
+      "description": "Expected effect on the subject's email channel (contracts/04, Store opt-ins). An address is never verified or opted in by its mere presence.",
+      "properties": {
+        "stored": {
+          "type": "boolean",
+          "description": "An address row exists for the subject after the case."
+        },
+        "opted_in": {
+          "type": "boolean"
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "verified_by": {
+          "enum": [
+            "store_opt_in",
+            "provider_double_opt_in"
+          ],
+          "description": "How a store verified the row: the shopper's opt-in at the store, or a double opt-in the store confirmed by email. Never set by a purchase."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "stored": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "opted_in"
+                  ],
+                  "properties": {
+                    "opted_in": {
+                      "const": true
+                    }
+                  }
+                },
+                {
+                  "required": [
+                    "verified"
+                  ],
+                  "properties": {
+                    "verified": {
+                      "const": true
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "verified_by"
+            ]
+          },
+          "then": {
+            "required": [
+              "verified",
+              "opted_in"
+            ],
+            "properties": {
+              "verified": {
+                "const": true
+              },
+              "opted_in": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

@@ -1,6 +1,12 @@
 # Whisperr integration contracts — 2.0.0
 
-Status: **`2.0.0-rc7` — implementation working baseline.** This revision adds SDK contract v2
+Status: **`2.0.0-rc8` — implementation working baseline.** This revision adds the commerce
+source contract: the optional manifest `events` table (per-signal codes, projection allowlists and
+occurrence key templates, [02](02-source-connection-manifest.md)), site-scoped WooCommerce
+occurrence keys and Shopify's checkout, fulfillment and order-placed signals
+([01](01-event-envelope.md)), store consent sources and store opt-ins ([04](04-consent-assertion.md)),
+the `invalid_request` rejection ([09](09-error-quarantine.md)), and commerce activity
+([11](11-automatic-events.md)). rc7 added SDK contract v2
 to the SDK profile: the anonymous identify, the reserved trait `app_language`, the push channel
 fields `client_app_id` / `provider_project`, version keys in event `context`, the reserved
 automatic event `push_received`, and reserved billing fallback names ([10](10-sdk-compatibility.md),

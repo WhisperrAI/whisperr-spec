@@ -3,7 +3,7 @@
 The single source of truth for the Whisperr integration contracts and for SDK ingestion
 behavior.
 
-## Integration contracts — `2.0.0-rc7`
+## Integration contracts — `2.0.0-rc8`
 
 [`contracts/`](contracts) holds the contracts the Whisperr Integration Program is built
 against: the canonical event envelope, source connection manifests, identity authority modes,
@@ -13,11 +13,17 @@ Start at [`contracts/00-overview.md`](contracts/00-overview.md).
 
 [`conformance/connectors/`](conformance/connectors) holds one fixture file per planned connector
 (Supabase, Clerk, Auth0, Stripe, RevenueCat, Shopify, WooCommerce, Segment, GA, Mixpanel,
-Amplitude, and custom code via MCP / PR agent / CLI). `python3 validate.py` first
+Amplitude, and custom code via MCP / PR agent / CLI). A commerce connector that reads a store's
+existing consent checkboxes carries a companion consent source fixture
+([`woocommerce_consent_sources.json`](conformance/connectors/woocommerce_consent_sources.json)).
+`python3 validate.py` first
 compiles every JSON Schema (including exported definitions) with Ajv and validates
 every fixture against its declared schema, resolving references only from this
 checkout. It then checks supplemental cross-field consistency, including whether
-each declared capability has a corresponding fixture assertion. An assertion is
+each declared capability has a corresponding fixture assertion, whether each expected envelope
+matches the manifest's event contract (declared code, allowlisted properties, an occurrence key
+its template can produce), and the consent source rules (attestation, basis, evidence layout,
+store opt-ins). An assertion is
 not evidence that its described behavior has executed successfully.
 
 Local validation requires Node.js 22+, Python 3, and the pinned npm dependencies:

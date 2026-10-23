@@ -1,0 +1,362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/consent-source-fixture.schema.json",
+  "title": "Whisperr store consent source fixtures 2.0.0",
+  "description": "Which of a store's existing marketing checkboxes counts as the shopper's email consent (contracts/04, Store consent sources). One file per commerce connector that reads third-party consent; its connector suite runs these cases next to the connector fixture. The case shape is the one the runtime's consent source test reads, so the file can be copied verbatim.",
+  "type": "object",
+  "required": [
+    "version",
+    "provider",
+    "cases"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "provider": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": [
+        "name",
+        "proves",
+        "given",
+        "expect"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "proves": {
+          "type": "string",
+          "minLength": 1
+        },
+        "given": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "attested": {
+              "type": "boolean",
+              "description": "true = the consent names the attestation the owner confirmed for its source; false = it names one that was never confirmed (or another connection's)."
+            },
+            "setup": {
+              "$ref": "#/$defs/setup"
+            },
+            "setups": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/setup"
+              },
+              "description": "Several setup saves, each run on its own. Used by refusal cases: every one must be refused."
+            },
+            "inbound": {
+              "$ref": "#/$defs/inbound"
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "inbound"
+              ]
+            },
+            {
+              "required": [
+                "setups"
+              ]
+            }
+          ]
+        },
+        "expect": {
+          "$ref": "#/$defs/expect"
+        }
+      }
+    },
+    "setup": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "consent_source": {
+          "type": "object",
+          "required": [
+            "kind",
+            "confirmed"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "description": "Free text on purpose: refusal cases send kinds that do not exist."
+            },
+            "confirmed": {
+              "type": "boolean",
+              "description": "The owner confirmed \"This checkbox asks shoppers for marketing email consent\"."
+            },
+            "meta": {
+              "type": "object",
+              "required": [
+                "scope",
+                "key",
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "scope": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "contact_sync": {
+          "enum": [
+            "off",
+            "all",
+            "consented_only"
+          ]
+        }
+      }
+    },
+    "inbound": {
+      "type": "object",
+      "required": [
+        "hook"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "hook": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+(/[a-z0-9_]+)*$"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "hook": {
+                "const": "whisperr/marketing_consent"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/consent_data"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "hook": {
+                "const": "whisperr/heartbeat"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/heartbeat_data"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "consent_data": {
+      "type": "object",
+      "required": [
+        "state",
+        "surface",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "subscribed",
+            "unsubscribed"
+          ]
+        },
+        "surface": {
+          "enum": [
+            "checkout",
+            "my_account",
+            "registration",
+            "store_sync",
+            "custom_code"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source_kind"
+        },
+        "source_detail": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "description": "The store's own name for its checkbox (custom_hook). Part of the evidence."
+        },
+        "attestation_id": {
+          "type": "string",
+          "pattern": "^wca_[A-Za-z0-9]+$",
+          "description": "The owner attestation the plugin's config named. Absent only for the plugin's own checkbox; a case may leave it to the harness, which fills in the attested one."
+        },
+        "backfill": {
+          "type": "boolean",
+          "description": "An existing subscriber of the confirmed source, read once per attestation."
+        },
+        "captured_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+          "description": "When the shopper opted in at the source. null = the source keeps no time; only a backfill may send null."
+        }
+      }
+    },
+    "heartbeat_data": {
+      "type": "object",
+      "properties": {
+        "consent_plugins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/plugin"
+          }
+        }
+      }
+    },
+    "plugin": {
+      "type": "object",
+      "required": [
+        "id",
+        "version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "source_kind": {
+      "enum": [
+        "whisperr_checkbox",
+        "mailpoet",
+        "mailchimp_for_woocommerce",
+        "klaviyo",
+        "custom_meta",
+        "custom_hook"
+      ],
+      "description": "whisperr_checkbox always counts. Every other source counts only once the owner chose and confirmed it."
+    },
+    "expect": {
+      "type": "object",
+      "required": [
+        "outcome"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "enum": [
+            "accepted",
+            "completed",
+            "superseded",
+            "rejected"
+          ],
+          "description": "completed / superseded are the consent receipt's terminal states. superseded = acknowledged, nothing recorded (contracts/04)."
+        },
+        "rejection_code": {
+          "$ref": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/quarantine.schema.json#/$defs/rejection_code"
+        },
+        "repair_action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consent": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "status",
+              "basis",
+              "evidence_ref"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "$ref": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/consent.schema.json#/$defs/assertion/properties/status"
+              },
+              "basis": {
+                "$ref": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/consent.schema.json#/$defs/assertion/properties/basis"
+              },
+              "evidence_ref": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*:\\{delivery_id\\}:[a-z_]+(:.+)?$",
+                "description": "{delivery_id}, {attestation_id} and {confirmed_at} are filled in by the harness."
+              }
+            }
+          },
+          "description": "Expected consent assertions; [] = none."
+        },
+        "channel": {
+          "$ref": "https://raw.githubusercontent.com/WhisperrAI/whisperr-spec/main/schemas/connector-fixture.schema.json#/$defs/channel_effect"
+        },
+        "attestations": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Attestations recorded after the case."
+        },
+        "detected_plugins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/plugin"
+          },
+          "description": "The consent plugins kept from the heartbeat, in the order the status reports them."
+        }
+      }
+    }
+  }
+}

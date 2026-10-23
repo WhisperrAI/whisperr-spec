@@ -141,6 +141,46 @@ request still succeeds (2xx).
    unsubscribe also records the sticky `delivery_unsubscribe` opt-out.
 5. Every email carries an unsubscribe link.
 
+## Store consent sources
+
+A store may already ask shoppers for marketing consent: in its checkout, a newsletter plugin, or
+its own code. WooCommerce reads those records only from a source the **owner chose and confirmed**
+("This checkbox asks shoppers for marketing email consent"). The confirmation is an attestation:
+who, when, which source, and the statement. It is never deleted; choosing another source
+supersedes it. Fixtures: [`woocommerce_consent_sources.json`](../conformance/connectors/woocommerce_consent_sources.json),
+schema [`consent-source-fixture.schema.json`](../schemas/consent-source-fixture.schema.json).
+
+| consent | recorded as |
+|---|---|
+| a tick on the plugin's own checkbox (`whisperr_checkbox`) | `explicit_user_action` — always counts, needs no attestation |
+| an opt-in from a confirmed third-party source, or any `store_sync` re-read | `imported_record` — a record the store keeps |
+| an opt-in from a source that is not confirmed (or was superseded before the shopper opted in) | nothing; the receipt ends `superseded` with the repair "The store owner has not confirmed this consent source; the consent was not recorded." |
+| an opt-out from any known source, confirmed or not | `explicit_user_action` — an opt-out always counts |
+
+- **Backfill.** Once a source is confirmed, its existing subscribers count too. Each is sent with
+  `backfill: true` and the time the shopper opted in at the source, or `null` when the source
+  keeps none. Only a third-party opt-in may be a backfill, and only a backfill may have no time;
+  anything else is rejected (`invalid_request`). A backfill of unknown time is asserted at the
+  confirmation and is not recorded at all when the shopper has any recorded opt-out.
+- **Evidence.** `{provider}:{delivery_id}:{source}[:{attestation_id}][:{source_detail}]`, and a
+  backfill adds `:backfill:{opted_in_at|unknown}:{confirmed_at}` (UTC, `20060102T150405Z`), so the
+  reference names the source, the attestation, the original opt-in and the confirmation.
+- An `imported_record` opt-in never clears a Whisperr unsubscribe or complaint (Resolution,
+  rule 3). Only a new tick on the plugin's own checkbox does.
+- A consent is for an existing subject only; it never creates a user.
+
+## Store opt-ins
+
+A store address is stored pending (not opted in, not verified), and only a recorded opt-in makes
+it sendable. Shopify's optional contact import (owner opt-in, address vault strict, the address
+re-read from Shopify and never kept in the receipt) and WooCommerce's `contact_sync` both follow
+this rule. When the consent record allows the opt-in, the store's own address row is verified as
+a store opt-in: `verified_by` is `store_opt_in`, or `provider_double_opt_in` for Shopify's
+`CONFIRMED_OPT_IN`, with the connection, the evidence and the time. It is never mistaken for an
+address the customer verified. A purchase, or an address alone, never verifies a row. A row that
+bounced, was suppressed, or that the customer verified or declared unverified is left as it is,
+and a later unsubscribe, bounce or complaint still stops sending.
+
 ## Invariants
 
 1. `unknown` blocks delivery. (invariant test)
@@ -151,3 +191,6 @@ request still succeeds (2xx).
    the `client_sdk` origin.
 6. A publishable key opts an email in only under the app's `client_email_consent` setting, only
    for a new or pending address, and never for `sms`.
+7. A third-party store consent source counts only after the owner confirmed it; an opt-out from
+   any source always counts. (consent source fixtures)
+8. A store address becomes sendable only through a recorded opt-in, marked as a store opt-in.
