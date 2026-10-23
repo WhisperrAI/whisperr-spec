@@ -336,6 +336,64 @@ if missing: err("conformance/connectors", f"no fixture file for launch connector
 extra = seen - LAUNCH
 if extra: err("conformance/connectors", f"fixture for a non-launch connector: {sorted(extra)}")
 
+# ---------------------------------------------------------------- 4g. catalog push conformance (contracts/06 v2)
+# The JSON Schema types every request and answer. These checks tie the fixture
+# to the published item schema and the code lists, so the SDKs' bundled copies
+# cannot drift from what the server accepts and sends.
+f = "conformance/catalog_push.json"
+cp = docs.get(f)
+item_schema = docs.get("schemas/catalog-item-v2.schema.json", {})
+push_schema = docs.get("schemas/catalog-push.schema.json", {})
+if cp is None:
+    err(f, "catalog push fixture missing")
+else:
+    defs = push_schema.get("$defs", {})
+    if cp["reject_codes"]["server"] != defs.get("item_reject_code", {}).get("enum"):
+        err(f, "reject_codes.server must list catalog-push.schema.json item_reject_code in order")
+    if cp["reject_codes"]["client"] != defs.get("client_reject_code", {}).get("enum"):
+        err(f, "reject_codes.client must list catalog-push.schema.json client_reject_code in order")
+    server_codes, client_codes = set(cp["reject_codes"]["server"]), set(cp["reject_codes"]["client"])
+    if server_codes & client_codes:
+        err(f, f"codes both server and client side: {sorted(server_codes & client_codes)}")
+    names, sent_keys = set(), set()
+    for c in cp["cases"]:
+        where = f"case {c['name']!r}"
+        if c["name"] in names: err(f, f"{where} is listed twice")
+        names.add(c["name"])
+        if c["op"] == "upsert":
+            for it in c["args"].get("items", []):
+                sent_keys |= set(it)
+        for i, x in enumerate(c["exchanges"]):
+            body = x["response"].get("body")
+            if isinstance(body, dict):
+                for r in body.get("rejected", []) or []:
+                    if r["code"] not in server_codes:
+                        err(f, f"{where} exchange {i + 1}: the server never sends reject code {r['code']!r}")
+            req = x["request"]
+            if c["op"] == "upsert" and "items" in c["args"] and "body" in req and len(c["exchanges"]) == 1:
+                if req["body"]["items"] != c["args"]["items"]:
+                    err(f, f"{where}: the request body must carry the items exactly as given")
+        for r in (c.get("result") or {}).get("rejected", []) if isinstance(c.get("result"), dict) else []:
+            if r["code"] not in server_codes | client_codes:
+                err(f, f"{where}: unknown reject code {r['code']!r} in the result")
+            elif (r["code"] in client_codes) != (r["message"] == "<sdk-defined>"):
+                err(f, f"{where}: a client-side reject (and only one) carries the message '<sdk-defined>'")
+        e = c.get("error")
+        if e and "code" in e:
+            if not c["exchanges"]:
+                err(f, f"{where}: a server error needs the exchange that answers it")
+            else:
+                last = c["exchanges"][-1]["response"]
+                if last["status"] != e["status"] or (last.get("body") or {}).get("error", {}).get("code") != e["code"]:
+                    err(f, f"{where}: error must equal the last answer's status and error.code")
+                if e["retryable"] != (e["status"] == 429 or e["status"] >= 500):
+                    err(f, f"{where}: only 429 and 5xx are retryable")
+    # Every key of the published item reaches the wire in some upsert case, so
+    # an SDK that drops or renames a key fails conformance.
+    missing = set(item_schema.get("properties", {})) - sent_keys
+    if missing:
+        err(f, f"no upsert case sends item key(s) {sorted(missing)} — add them to upsert_full_v2_item")
+
 # ---------------------------------------------------------------- 5. relay payload cannot carry an address
 relay = docs.get("schemas/relay.schema.json", {})
 payload = relay.get("$defs", {}).get("payload", {})
