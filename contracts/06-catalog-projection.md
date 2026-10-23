@@ -182,9 +182,10 @@ Per-item reject codes (`rejected[].code`); one rejected item never fails the res
 | `invalid_kind` | `kind` does not fit `type`. |
 | `revision_conflict` | Different content at the same `updated_at`. Send a newer `updated_at`. |
 
-**Client-side only:** `item_too_large`. A server SDK adds it to `rejected[]` for an item that
-alone encodes to more than the 2 MiB body limit, so no batch can carry it. The server never
-sends it. Server SDKs list it apart (`reject_codes.client` in the fixture).
+**Client-side only:** `item_too_large`. The server never sends it. A server SDK adds it to
+`rejected[]` itself for an item that alone encodes to more than the 2 MiB body limit, or that
+still gets 413 when sent alone (see 413 below). Its `message` is SDK-defined. The fixture lists
+it apart, in `reject_codes.client`.
 
 Request-level errors always have the body `{"error":{"code","message"}}`:
 
@@ -195,7 +196,7 @@ Request-level errors always have the body `{"error":{"code","message"}}`:
 | 403 | `server_key_required` | no |
 | 404 | `route_not_implemented` (push API off) | no |
 | 409 | `catalog_push_disabled` (the owner turned push off), `catalog_source_unavailable` (the custom code source is disconnected), `snapshot_not_open`, `snapshot_open` | no |
-| 413 | `batch_too_large` | no |
+| 413 | `batch_too_large` | never resent unchanged. An upsert chunk is split in halves and resent; a single item that still gets 413 becomes `item_too_large`. A delete raises it. |
 | 429, 5xx | `rate_limited`, … | yes, with backoff, honoring `Retry-After`, resending the same body |
 
 ### Server SDK client

@@ -376,6 +376,8 @@ else:
         for r in (c.get("result") or {}).get("rejected", []) if isinstance(c.get("result"), dict) else []:
             if r["code"] not in server_codes | client_codes:
                 err(f, f"{where}: unknown reject code {r['code']!r} in the result")
+            elif (r["code"] in client_codes) != (r["message"] == "<sdk-defined>"):
+                err(f, f"{where}: a client-side reject (and only one) carries the message '<sdk-defined>'")
         e = c.get("error")
         if e and "code" in e:
             if not c["exchanges"]:

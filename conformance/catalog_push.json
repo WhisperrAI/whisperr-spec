@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/catalog-push.schema.json",
   "contract": "catalog-v2/1",
-  "description": "Server SDK conformance for the catalog push API (contracts/06, v2 section; whisperr-go /v1/catalog/*). Every server SDK bundles a byte-identical copy of this file and runs every case: the SDK sends exactly these requests for these calls and returns these results. Item inputs are given in the wire shape (catalog-item-v2.schema.json#/$defs/push_item); each SDK test converts them to its own field naming before calling the SDK. Results are given in the wire shape too. Error bodies are exactly what the server sends: {\"error\":{\"code\",\"message\"}}.",
+  "description": "Server SDK conformance for the catalog push API (contracts/06, v2 section; whisperr-go /v1/catalog/*). Every server SDK bundles a byte-identical copy of this file and runs every case: the SDK sends exactly these requests for these calls and returns these results. Item inputs are given in the wire shape (catalog-item-v2.schema.json#/$defs/push_item); each SDK test converts them to its own field naming before calling the SDK. Results are given in the wire shape too. Error bodies are exactly what the server sends: {\"error\":{\"code\",\"message\"}}. A reject with a client-side code (reject_codes.client) carries the message \"<sdk-defined>\": the SDK writes its own message there, and harnesses check only that it is a non-empty string.",
   "limits": {
     "upsert_batch": 500,
     "delete_batch": 1000,
@@ -1173,8 +1173,8 @@
       }
     },
     {
-      "name": "batch_too_large_is_not_retried",
-      "proves": "413 batch_too_large is final: resending the same body cannot succeed.",
+      "name": "upsert_413_splits_the_chunk_then_rejects_one_item_as_item_too_large",
+      "proves": "A 413 (a proxy or the server measured the body over the limit) is never resent unchanged: the SDK splits the chunk in halves and resends each; a single item that still gets 413 becomes a client-side item_too_large reject at its index, and the rest of the call goes on.",
       "op": "upsert",
       "args": {
         "items": [
@@ -1182,6 +1182,13 @@
             "source_item_id": "sku-1",
             "type": "product",
             "name": "One",
+            "availability": "available",
+            "updated_at": "2026-10-23T09:00:00Z"
+          },
+          {
+            "source_item_id": "sku-2",
+            "type": "product",
+            "name": "Two",
             "availability": "available",
             "updated_at": "2026-10-23T09:00:00Z"
           }
@@ -1193,8 +1200,96 @@
             "method": "POST",
             "path": "/v1/catalog/items/batch",
             "item_ids": [
+              "sku-1",
+              "sku-2"
+            ]
+          },
+          "response": {
+            "status": 413,
+            "body": {
+              "error": {
+                "code": "batch_too_large",
+                "message": "A batch holds at most 500 upserts or 1000 deletes and 2 MiB."
+              }
+            }
+          }
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/v1/catalog/items/batch",
+            "item_ids": [
               "sku-1"
             ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "accepted": 1,
+              "applied": 1,
+              "unchanged": 0,
+              "ignored_older": 0,
+              "rejected": []
+            }
+          }
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/v1/catalog/items/batch",
+            "item_ids": [
+              "sku-2"
+            ]
+          },
+          "response": {
+            "status": 413,
+            "body": {
+              "error": {
+                "code": "batch_too_large",
+                "message": "A batch holds at most 500 upserts or 1000 deletes and 2 MiB."
+              }
+            }
+          }
+        }
+      ],
+      "result": {
+        "accepted": 1,
+        "applied": 1,
+        "unchanged": 0,
+        "ignored_older": 0,
+        "rejected": [
+          {
+            "index": 1,
+            "source_item_id": "sku-2",
+            "code": "item_too_large",
+            "message": "<sdk-defined>"
+          }
+        ]
+      }
+    },
+    {
+      "name": "delete_413_is_final",
+      "proves": "A delete batch is at most 1000 small entries, so 413 batch_too_large on a delete is final: the SDK raises it once and never resends.",
+      "op": "delete",
+      "args": {
+        "ids": [
+          "sku-1"
+        ],
+        "deleted_at": "2026-10-23T10:00:00Z"
+      },
+      "exchanges": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/v1/catalog/items/delete",
+            "body": {
+              "items": [
+                {
+                  "source_item_id": "sku-1",
+                  "deleted_at": "2026-10-23T10:00:00Z"
+                }
+              ]
+            }
           },
           "response": {
             "status": 413,
