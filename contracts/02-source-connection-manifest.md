@@ -183,6 +183,48 @@ situation from recurring, and it is what makes the C2 scope-shed *safe*: droppin
 GA/Mixpanel/Amplitude to "labels-only" is `live_stream: false, history: true` with fixtures to
 match — a first-class supported mode, not a hack.
 
+## `events` — the event contract
+
+Optional since `2.0.0-rc8`. A connector that projects provider signals into event codes lists
+them, so the setup proposal, the registry and the fixtures read one table:
+
+```json
+"events": [
+  { "signal": "orders/paid", "code": "order_paid",
+    "properties": ["order_id", "amount_minor", "currency", "product_ids"],
+    "counts_as_activity": true, "requires_scopes": ["read_orders"] },
+  { "signal": "checkouts/started", "topics": ["checkouts/create", "checkouts/update"],
+    "code": "checkout_started", "properties": ["checkout_id"],
+    "occurrence_key_template": "shopify:checkout_started:{checkout_id}" }
+]
+```
+
+| field | meaning |
+|---|---|
+| `signal` | the provider signal: a webhook topic, a virtual signal one topic carries, or a plugin hook. Unique in the manifest — one signal means one code |
+| `topics` | the delivery topics that carry the signal, when they differ from it. One delivery is accepted once per *selected* signal it carries; a deselected sibling is never accepted, and a sender cannot choose the signal |
+| `code` | the event code. Several signals may share one (a live and a historical order) |
+| `properties` | the projection allowlist ([01](01-event-envelope.md) invariant 7). Nothing else from the payload is stored |
+| `occurrence_key_template` | overrides `correlation.occurrence_key_template` for this signal, when repeated deliveries must collapse (one start per checkout, one delivery per fulfillment) |
+| `suggested` | `false` = offered at setup but never pre-selected (default `true`) |
+| `historical` | the signal only carries history imports; needs `capabilities.history` and never counts as live coverage |
+| `counts_as_activity` | a commerce shopper action that may count as user activity ([11](11-automatic-events.md)) |
+| `requires_scopes` | scopes the signal needs; each must be requested in `auth.scopes` |
+
+Templates use `{name}` placeholders, one key segment each, and start with `{provider}:`. Two
+commerce stores may share a code (`order_paid`, `order_refunded`, `checkout_started`). A property
+name they both project means the same fact in the same unit (`refund_amount_minor`, never a
+second spelling of it); each store may add its own properties, and the app's registry definition
+for the code is the union. A store never changes the meaning or unit of a shared property.
+Playbooks read the per-store names through alias rows, so a connector keeps its own names.
+
+`requires_scopes` lists every scope the signal needs to be observed at all, including scopes a
+read-back needs: a Shopify refund or fulfillment names only the order, so reading the exact
+order's customer needs `read_customers` as well as `read_orders`. Scopes are checked per delivery,
+before a signal is chosen, so a case whose delivery is not rejected (accepted, ignored or
+deduplicated) lists the scopes of every signal its topic or hook carries; without them the
+runtime refuses the delivery instead.
+
 ## `health` and `lifecycle`
 
 Every connector must support all four of `disconnect`, `revocation`, `recovery`, `replay` — the
@@ -201,3 +243,8 @@ untouched, and that isolation is a fixture case.
 7. No case requires a scope the manifest does not request.
 8. A requested scope never also appears in `never_requests`.
 9. An OAuth connector carries the registered callback verbatim; `approved` is coordinator-set.
+10. When `events` is declared, every signal appears once, needs only requested scopes, and every
+    expected envelope in the fixtures uses a declared code, only the allowlisted properties of the
+    signal it was delivered as, and an occurrence key its template can produce (a contents digest
+    is recomputed from the case's line items). A case whose delivery is not rejected lists the
+    `requires_scopes` of every signal its topic or hook carries.

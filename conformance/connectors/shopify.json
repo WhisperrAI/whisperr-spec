@@ -2,7 +2,7 @@
   "$schema": "../../schemas/connector-fixture.schema.json",
   "version": 1,
   "provider": "shopify",
-  "description": "Shopify app: scoped offline access, standard + compliance webhooks, storefront pixel, catalog sync with repair. Authoritative ONLY within its own customer namespace.",
+  "description": "Shopify app: scoped offline access, standard + compliance webhooks, checkout and fulfillment signals, storefront pixel, catalog sync with repair, owner-approved contact email import. Authoritative ONLY within its own customer namespace.",
   "manifest": {
     "manifest_version": "2.0.0",
     "provider": "shopify",
@@ -22,7 +22,7 @@
         {
           "scope": "read_orders",
           "required": true,
-          "why": "order and checkout events"
+          "why": "order, refund and checkout events, and the exact order read back for refunds and fulfillments"
         },
         {
           "scope": "read_products",
@@ -36,8 +36,13 @@
         },
         {
           "scope": "read_customers",
-          "required": false,
-          "why": "namespace identity links"
+          "required": true,
+          "why": "customer webhooks and namespace identity links (Shopify refuses customers/* subscriptions without it), the exact order's customer for refunds and fulfillments, and the owner-approved contact email import"
+        },
+        {
+          "scope": "read_fulfillments",
+          "required": true,
+          "why": "order_shipped and order_delivered (fulfillments/create and fulfillments/update)"
         },
         {
           "scope": "write_pixels",
@@ -72,14 +77,16 @@
       },
       "granted_scopes": [
         "read_orders",
-        "read_products"
+        "read_products",
+        "read_inventory",
+        "read_customers"
       ],
       "scope_deltas": {
         "pending_grant": [
           {
-            "scope": "read_inventory",
-            "closed_by": "S34",
-            "note": "shopify.app.toml requests read_orders,read_products only. Availability checks (the out-of-stock case) need read_inventory. S34 amends the toml and deploys a new draft before any install test."
+            "scope": "read_fulfillments",
+            "closed_by": "whisperr-go#629",
+            "note": "App version whisperr-3 registers read_orders, read_products, read_inventory and read_customers. #629's shopify.app.toml adds read_fulfillments and the orders/create, checkouts/* and fulfillments/* topics; deploy it as app version whisperr-4 before the runtime default requests the scope, or authorization fails closed."
           },
           {
             "scope": "write_pixels",
@@ -90,11 +97,6 @@
             "scope": "read_customer_events",
             "closed_by": "S34",
             "note": "Optional, pairs with write_pixels to receive storefront pixel events."
-          },
-          {
-            "scope": "read_customers",
-            "closed_by": "S34",
-            "note": "Optional in the toml already; listed for completeness so the ledger is the single view of the delta."
           }
         ]
       }
@@ -109,6 +111,204 @@
     "correlation": {
       "occurrence_key_template": "shopify:{topic}:{provider_event_id}"
     },
+    "events": [
+      {
+        "signal": "orders/paid",
+        "code": "order_paid",
+        "properties": [
+          "order_id",
+          "amount_minor",
+          "currency",
+          "checkout_id",
+          "product_ids",
+          "catalog_item_id",
+          "catalog_item_kind",
+          "item_count",
+          "line_count",
+          "discount_used",
+          "discount_amount_minor",
+          "sales_channel",
+          "customer_order_count"
+        ],
+        "counts_as_activity": true,
+        "requires_scopes": [
+          "read_orders"
+        ],
+        "notes": "catalog_item_* names the highest-value line. sales_channel is online_store, pos, draft_order or app. customer_order_count is a best-effort read of the order's customer when the order is processed (read_orders and read_customers), omitted when it fails. Discount code text is never kept."
+      },
+      {
+        "signal": "orders/create",
+        "code": "order_placed",
+        "properties": [
+          "order_id",
+          "amount_minor",
+          "currency",
+          "checkout_id",
+          "product_ids",
+          "catalog_item_id",
+          "catalog_item_kind",
+          "item_count",
+          "line_count",
+          "discount_used",
+          "discount_amount_minor",
+          "sales_channel"
+        ],
+        "suggested": false,
+        "counts_as_activity": true,
+        "requires_scopes": [
+          "read_orders"
+        ],
+        "notes": "For offline payment gateways. Offered, never suggested: for most stores it duplicates order_paid."
+      },
+      {
+        "signal": "orders/cancelled",
+        "code": "order_cancelled",
+        "properties": [
+          "order_id"
+        ],
+        "requires_scopes": [
+          "read_orders"
+        ]
+      },
+      {
+        "signal": "orders/fulfilled",
+        "code": "order_fulfilled",
+        "properties": [
+          "order_id"
+        ],
+        "requires_scopes": [
+          "read_orders"
+        ]
+      },
+      {
+        "signal": "refunds/create",
+        "code": "order_refunded",
+        "properties": [
+          "order_id",
+          "refund_amount_minor",
+          "currency",
+          "refunded_product_ids"
+        ],
+        "requires_scopes": [
+          "read_orders",
+          "read_customers"
+        ],
+        "notes": "Sums successful refund transactions only; mixed currencies report no amount. The subject is the exact order's customer, read back from Shopify."
+      },
+      {
+        "signal": "checkouts/started",
+        "topics": [
+          "checkouts/create",
+          "checkouts/update"
+        ],
+        "code": "checkout_started",
+        "properties": [
+          "checkout_id"
+        ],
+        "occurrence_key_template": "shopify:checkout_started:{checkout_id}",
+        "counts_as_activity": true,
+        "requires_scopes": [
+          "read_orders"
+        ],
+        "notes": "Once per checkout: the first delivery that names a customer wins. A checkout without a customer is ignored until one does."
+      },
+      {
+        "signal": "checkouts/updated",
+        "topics": [
+          "checkouts/create",
+          "checkouts/update"
+        ],
+        "code": "checkout_updated",
+        "properties": [
+          "checkout_id",
+          "product_ids",
+          "catalog_item_id",
+          "catalog_item_kind",
+          "item_count",
+          "value_minor",
+          "currency"
+        ],
+        "occurrence_key_template": "shopify:checkout_updated:{checkout_id}:{contents_digest}",
+        "counts_as_activity": true,
+        "requires_scopes": [
+          "read_orders"
+        ],
+        "notes": "contents_digest = the first 16 hex characters of SHA-256 over the sorted product_id/variant_id/quantity lines joined by commas, then |total_price|currency. The same contents deduplicate; changed contents are a new occurrence. abandoned_checkout_url is a bearer link and is never stored."
+      },
+      {
+        "signal": "checkouts/completed",
+        "topics": [
+          "checkouts/update"
+        ],
+        "code": "checkout_completed",
+        "properties": [
+          "checkout_id"
+        ],
+        "occurrence_key_template": "shopify:checkout_completed:{checkout_id}",
+        "requires_scopes": [
+          "read_orders"
+        ],
+        "notes": "Only when completed_at is set. Abandonment matches checkout_started to a finish event's checkout_id."
+      },
+      {
+        "signal": "fulfillments/shipped",
+        "topics": [
+          "fulfillments/create",
+          "fulfillments/update"
+        ],
+        "code": "order_shipped",
+        "properties": [
+          "order_id",
+          "fulfillment_id",
+          "product_ids",
+          "item_count"
+        ],
+        "occurrence_key_template": "shopify:order_shipped:{fulfillment_id}",
+        "requires_scopes": [
+          "read_fulfillments",
+          "read_orders",
+          "read_customers"
+        ],
+        "notes": "Status success. An update for a fulfillment created more than 29 days ago is not a new shipment. Carrier, tracking numbers, estimated dates and destination are never kept."
+      },
+      {
+        "signal": "fulfillments/delivered",
+        "topics": [
+          "fulfillments/update"
+        ],
+        "code": "order_delivered",
+        "properties": [
+          "order_id",
+          "fulfillment_id",
+          "product_ids",
+          "item_count"
+        ],
+        "occurrence_key_template": "shopify:order_delivered:{fulfillment_id}",
+        "requires_scopes": [
+          "read_fulfillments",
+          "read_orders",
+          "read_customers"
+        ],
+        "notes": "shipment_status delivered, once per fulfillment."
+      },
+      {
+        "signal": "customers/create",
+        "code": "customer_created",
+        "properties": [],
+        "requires_scopes": [
+          "read_customers"
+        ],
+        "notes": "Consent and the contact import run in the control queue, never as properties."
+      },
+      {
+        "signal": "customers/update",
+        "code": "customer_updated",
+        "properties": [],
+        "requires_scopes": [
+          "read_customers"
+        ]
+      }
+    ],
     "freshness": {
       "catalog_threshold_seconds": 3600
     },
@@ -533,6 +733,847 @@
       },
       "requires_scopes": [
         "read_orders"
+      ]
+    },
+    {
+      "name": "order_paid_carries_minimized_purchase_facts",
+      "proves": "01: orders/paid projects only the purchase allowlist",
+      "given": {
+        "inbound": {
+          "topic": "orders/paid",
+          "x_shopify_webhook_id": "b1f0",
+          "order_id": 4471,
+          "customer": {
+            "id": 8842001,
+            "email": "ada@example.com"
+          },
+          "checkout_id": 3301,
+          "total_price": "187.00",
+          "total_discounts": "10.00",
+          "currency": "EUR",
+          "source_name": "web",
+          "discount_codes": [
+            {
+              "code": "ADA10"
+            }
+          ],
+          "line_items": [
+            {
+              "product_id": 8471,
+              "variant_id": 41001,
+              "quantity": 1,
+              "price": "129.00"
+            },
+            {
+              "product_id": 9002,
+              "variant_id": 52002,
+              "quantity": 2,
+              "price": "29.00"
+            },
+            {
+              "product_id": null,
+              "quantity": 1,
+              "price": "0.00",
+              "title": "Gift wrap"
+            }
+          ],
+          "shipping_address": {
+            "address1": "1 Example St"
+          },
+          "created_at": "2026-08-31T09:14:02.117Z",
+          "hmac_valid": true
+        },
+        "state": {
+          "customer_order_count": 3
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event": {
+            "code": "order_paid",
+            "properties": {
+              "order_id": "gid://shopify/Order/4471",
+              "amount_minor": 18700,
+              "currency": "EUR",
+              "checkout_id": "3301",
+              "product_ids": [
+                "gid://shopify/Product/8471",
+                "gid://shopify/Product/9002"
+              ],
+              "catalog_item_id": "gid://shopify/Product/8471",
+              "catalog_item_kind": "product",
+              "item_count": 4,
+              "line_count": 3,
+              "discount_used": true,
+              "discount_amount_minor": 1000,
+              "sales_channel": "online_store",
+              "customer_order_count": 3
+            }
+          },
+          "subject": {
+            "authority": "namespace_authoritative",
+            "source_subject_id": "8842001"
+          },
+          "correlation": {
+            "occurrence_key": "shopify:orders/paid:b1f0"
+          }
+        },
+        "consent": [],
+        "notes": "The discount code text, email and shipping address are never kept. A line without a product counts as an item and names no product."
+      },
+      "demonstrates_capabilities": [
+        "live_stream"
+      ],
+      "requires_scopes": [
+        "read_orders"
+      ]
+    },
+    {
+      "name": "order_placed_is_offered_not_suggested",
+      "proves": "05: a signal the owner did not select is acknowledged and never becomes an event",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "topic": "orders/create",
+          "x_shopify_webhook_id": "b1f1",
+          "order_id": 4472,
+          "customer": {
+            "id": 8842001
+          },
+          "total_price": "40.00",
+          "currency": "EUR",
+          "hmac_valid": true
+        },
+        "state": {
+          "selected_events": [
+            "order_paid"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "ignored",
+        "notes": "order_placed is in the setup proposal with suggested=false. Once the owner selects it, the same delivery is accepted as order_placed with key shopify:orders/create:b1f1."
+      },
+      "requires_scopes": [
+        "read_orders"
+      ]
+    },
+    {
+      "name": "one_topic_is_accepted_once_per_selected_signal",
+      "proves": "05: one checkouts/update delivery carries several meanings; only the selected ones are accepted, and a sender's signal header is never trusted",
+      "given": {
+        "inbound": {
+          "topic": "checkouts/update",
+          "x_shopify_webhook_id": "b1f2",
+          "x_whisperr_shopify_signal": "checkouts/completed",
+          "checkout_id": 3301,
+          "customer": {
+            "id": 8842001
+          },
+          "created_at": "2026-08-31T09:00:00.000Z",
+          "updated_at": "2026-08-31T09:14:02.117Z",
+          "completed_at": null,
+          "total_price": "187.00",
+          "currency": "EUR",
+          "line_items": [
+            {
+              "product_id": 8471,
+              "variant_id": 41001,
+              "quantity": 1,
+              "price": "129.00"
+            },
+            {
+              "product_id": 9002,
+              "variant_id": 52002,
+              "quantity": 2,
+              "price": "29.00"
+            }
+          ],
+          "hmac_valid": true
+        },
+        "state": {
+          "selected_events": [
+            "checkout_started"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event": {
+            "code": "checkout_started",
+            "properties": {
+              "checkout_id": "3301"
+            }
+          },
+          "correlation": {
+            "occurrence_key": "shopify:checkout_started:3301"
+          }
+        },
+        "notes": "Exactly one receipt (idempotency per delivery and signal). The receiver drops the sender's X-Whisperr-Shopify-Signal and sets it per selected signal after verification; checkout_updated is not selected and checkout_completed has no completed_at."
+      },
+      "requires_scopes": [
+        "read_orders"
+      ]
+    },
+    {
+      "name": "anonymous_checkout_waits_for_its_customer",
+      "proves": "03: a checkout no one can be attributed to is not an event yet",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "topic": "checkouts/create",
+          "x_shopify_webhook_id": "b1f3",
+          "checkout_id": 3302,
+          "customer": null,
+          "email": "ada@example.com",
+          "created_at": "2026-08-31T09:00:00.000Z",
+          "updated_at": "2026-08-31T09:00:00.000Z",
+          "hmac_valid": true
+        },
+        "state": {
+          "selected_events": [
+            "checkout_started",
+            "checkout_updated"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "ignored",
+        "consent": [],
+        "notes": "The email does not identify anyone. A later update that names the customer emits checkout_started with the checkout's own created_at."
+      },
+      "requires_scopes": [
+        "read_orders"
+      ]
+    },
+    {
+      "name": "checkout_started_is_one_occurrence_per_checkout",
+      "proves": "01: repeated checkout updates collapse to one start",
+      "given": {
+        "inbound": {
+          "topic": "checkouts/update",
+          "x_shopify_webhook_id": "b1f4",
+          "checkout_id": 3301,
+          "customer": {
+            "id": 8842001
+          },
+          "created_at": "2026-08-31T09:00:00.000Z",
+          "updated_at": "2026-08-31T09:20:00.000Z",
+          "hmac_valid": true
+        },
+        "state": {
+          "selected_events": [
+            "checkout_started"
+          ],
+          "already_ingested_occurrences": [
+            "shopify:checkout_started:3301"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "deduplicated",
+        "envelope": {
+          "correlation": {
+            "occurrence_key": "shopify:checkout_started:3301"
+          }
+        },
+        "notes": "checkout_started carries only checkout_id, which never changes for its key, so the repeat deduplicates instead of quarantining."
+      },
+      "requires_scopes": [
+        "read_orders"
+      ]
+    },
+    {
+      "name": "checkout_updated_is_keyed_by_cart_contents",
+      "proves": "01: the same cart contents are one occurrence; changed contents are a new one",
+      "given": {
+        "inbound": {
+          "topic": "checkouts/update",
+          "x_shopify_webhook_id": "b1f5",
+          "checkout_id": 3301,
+          "customer": {
+            "id": 8842001
+          },
+          "created_at": "2026-08-31T09:00:00.000Z",
+          "updated_at": "2026-08-31T09:14:02.117Z",
+          "total_price": "187.00",
+          "currency": "EUR",
+          "line_items": [
+            {
+              "product_id": 8471,
+              "variant_id": 41001,
+              "quantity": 1,
+              "price": "129.00"
+            },
+            {
+              "product_id": 9002,
+              "variant_id": 52002,
+              "quantity": 2,
+              "price": "29.00"
+            }
+          ],
+          "abandoned_checkout_url": "https://shop.example.com/checkouts/abc/recover?key=secret",
+          "hmac_valid": true
+        },
+        "state": {
+          "selected_events": [
+            "checkout_updated"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event": {
+            "code": "checkout_updated",
+            "properties": {
+              "checkout_id": "3301",
+              "product_ids": [
+                "gid://shopify/Product/8471",
+                "gid://shopify/Product/9002"
+              ],
+              "catalog_item_id": "gid://shopify/Product/8471",
+              "catalog_item_kind": "product",
+              "item_count": 3,
+              "value_minor": 18700,
+              "currency": "EUR"
+            }
+          },
+          "correlation": {
+            "occurrence_key": "shopify:checkout_updated:3301:6c789a56872a0f84"
+          }
+        },
+        "notes": "6c789a56872a0f84 = SHA-256(\"8471/41001/1,9002/52002/2|187.00|EUR\")[:16]. The recovery URL is a bearer link and is never stored."
+      },
+      "demonstrates_capabilities": [
+        "live_stream"
+      ],
+      "requires_scopes": [
+        "read_orders"
+      ]
+    },
+    {
+      "name": "checkout_completed_needs_completed_at",
+      "proves": "01: a checkout finishes once, when Shopify marks it complete",
+      "given": {
+        "inbound": {
+          "topic": "checkouts/update",
+          "x_shopify_webhook_id": "b1f6",
+          "checkout_id": 3301,
+          "customer": {
+            "id": 8842001
+          },
+          "created_at": "2026-08-31T09:00:00.000Z",
+          "updated_at": "2026-08-31T09:30:00.000Z",
+          "completed_at": "2026-08-31T09:30:00.000Z",
+          "hmac_valid": true
+        },
+        "state": {
+          "selected_events": [
+            "checkout_completed"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event": {
+            "code": "checkout_completed",
+            "properties": {
+              "checkout_id": "3301"
+            }
+          },
+          "correlation": {
+            "occurrence_key": "shopify:checkout_completed:3301"
+          }
+        }
+      },
+      "requires_scopes": [
+        "read_orders"
+      ]
+    },
+    {
+      "name": "fulfillment_shipped_reads_the_orders_customer",
+      "proves": "03: a fulfillment names the order, so the subject is the exact order's customer, never inferred",
+      "given": {
+        "inbound": {
+          "topic": "fulfillments/create",
+          "x_shopify_webhook_id": "b1f7",
+          "fulfillment_id": 5501,
+          "order_id": 4471,
+          "status": "success",
+          "created_at": "2026-08-31T09:14:02.117Z",
+          "tracking_company": "DHL",
+          "tracking_number": "JD0123",
+          "destination": {
+            "address1": "1 Example St"
+          },
+          "line_items": [
+            {
+              "product_id": 8471,
+              "quantity": 1
+            }
+          ],
+          "hmac_valid": true
+        },
+        "state": {
+          "selected_events": [
+            "order_shipped"
+          ],
+          "order_customer": {
+            "order_id": "gid://shopify/Order/4471",
+            "customer_id": "8842001"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event": {
+            "code": "order_shipped",
+            "properties": {
+              "order_id": "gid://shopify/Order/4471",
+              "fulfillment_id": "5501",
+              "product_ids": [
+                "gid://shopify/Product/8471"
+              ],
+              "item_count": 1
+            }
+          },
+          "subject": {
+            "authority": "namespace_authoritative",
+            "source_subject_id": "8842001"
+          },
+          "correlation": {
+            "occurrence_key": "shopify:order_shipped:5501"
+          }
+        },
+        "notes": "Carrier, tracking number, estimated dates and destination are never kept. A failed order read is retried, never acknowledged as an anonymous fact."
+      },
+      "demonstrates_capabilities": [
+        "live_stream"
+      ],
+      "requires_scopes": [
+        "read_fulfillments",
+        "read_orders",
+        "read_customers"
+      ]
+    },
+    {
+      "name": "delivered_is_one_occurrence_per_fulfillment",
+      "proves": "01: delivery is reported once per fulfillment, however many updates follow",
+      "given": {
+        "inbound": {
+          "topic": "fulfillments/update",
+          "x_shopify_webhook_id": "b1f8",
+          "fulfillment_id": 5501,
+          "order_id": 4471,
+          "status": "success",
+          "shipment_status": "delivered",
+          "created_at": "2026-08-31T09:14:02.117Z",
+          "updated_at": "2026-09-02T15:00:00.000Z",
+          "line_items": [
+            {
+              "product_id": 8471,
+              "quantity": 1
+            }
+          ],
+          "hmac_valid": true
+        },
+        "state": {
+          "selected_events": [
+            "order_shipped",
+            "order_delivered"
+          ],
+          "order_customer": {
+            "order_id": "gid://shopify/Order/4471",
+            "customer_id": "8842001"
+          },
+          "already_ingested_occurrences": [
+            "shopify:order_shipped:5501"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event": {
+            "code": "order_delivered",
+            "properties": {
+              "order_id": "gid://shopify/Order/4471",
+              "fulfillment_id": "5501",
+              "product_ids": [
+                "gid://shopify/Product/8471"
+              ],
+              "item_count": 1
+            }
+          },
+          "correlation": {
+            "occurrence_key": "shopify:order_delivered:5501"
+          }
+        },
+        "notes": "The same delivery is also accepted as order_shipped and deduplicates against the earlier shipment."
+      },
+      "requires_scopes": [
+        "read_fulfillments",
+        "read_orders",
+        "read_customers"
+      ]
+    },
+    {
+      "name": "late_fulfillment_update_is_not_a_new_shipment",
+      "proves": "01: an update long after shipping does not ship the order again",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "topic": "fulfillments/update",
+          "x_shopify_webhook_id": "b1f9",
+          "fulfillment_id": 5490,
+          "order_id": 4400,
+          "status": "success",
+          "shipment_status": "in_transit",
+          "created_at": "2026-07-20T10:00:00.000Z",
+          "updated_at": "2026-08-31T09:14:02.117Z",
+          "now": "2026-08-31T09:14:02.117Z",
+          "hmac_valid": true
+        },
+        "state": {
+          "selected_events": [
+            "order_shipped",
+            "order_delivered"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "ignored",
+        "notes": "The fulfillment was created more than 29 days ago, past ingress's 30-day window. order_shipped is ignored for it (no Shopify read), and a later delivered update is still accepted as order_delivered."
+      },
+      "requires_scopes": [
+        "read_fulfillments",
+        "read_orders",
+        "read_customers"
+      ]
+    },
+    {
+      "name": "refund_counts_only_successful_refund_transactions",
+      "proves": "01: refund amounts are exact and only what was actually refunded",
+      "given": {
+        "inbound": {
+          "topic": "refunds/create",
+          "x_shopify_webhook_id": "b1fa",
+          "refund_id": 6601,
+          "order_id": 4471,
+          "user_id": 99,
+          "created_at": "2026-09-03T10:00:00.000Z",
+          "transactions": [
+            {
+              "kind": "refund",
+              "status": "success",
+              "amount": "29.00",
+              "currency": "EUR"
+            },
+            {
+              "kind": "refund",
+              "status": "failure",
+              "amount": "10.00",
+              "currency": "EUR"
+            }
+          ],
+          "refund_line_items": [
+            {
+              "line_item": {
+                "product_id": 9002
+              }
+            }
+          ],
+          "hmac_valid": true
+        },
+        "state": {
+          "order_customer": {
+            "order_id": "gid://shopify/Order/4471",
+            "customer_id": "8842001"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event": {
+            "code": "order_refunded",
+            "properties": {
+              "order_id": "gid://shopify/Order/4471",
+              "refund_amount_minor": 2900,
+              "currency": "EUR",
+              "refunded_product_ids": [
+                "gid://shopify/Product/9002"
+              ]
+            }
+          },
+          "subject": {
+            "source_subject_id": "8842001"
+          },
+          "correlation": {
+            "occurrence_key": "shopify:refunds/create:b1fa"
+          }
+        },
+        "notes": "user_id is the staff member who refunded, never the shopper."
+      },
+      "requires_scopes": [
+        "read_orders",
+        "read_customers"
+      ]
+    },
+    {
+      "name": "contact_import_is_off_by_default",
+      "proves": "04: a store address is imported only after the owner opts in",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "topic": "customers/update",
+          "x_shopify_webhook_id": "b1fb",
+          "customer": {
+            "id": 8842001,
+            "email": "ada@example.com"
+          },
+          "hmac_valid": true
+        },
+        "state": {
+          "contact_import_enabled": false,
+          "vault_mode": "strict"
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": [],
+        "channel": {
+          "stored": false
+        }
+      },
+      "requires_scopes": [
+        "read_customers"
+      ]
+    },
+    {
+      "name": "imported_address_without_consent_is_never_verified",
+      "proves": "04: an imported address is stored pending; an address alone is not consent",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "topic": "customers/update",
+          "x_shopify_webhook_id": "b1fc",
+          "customer": {
+            "id": 8842001
+          },
+          "hmac_valid": true
+        },
+        "state": {
+          "contact_import_enabled": true,
+          "vault_mode": "strict",
+          "customer_contact": {
+            "email": "ada@example.com",
+            "email_marketing_consent": {
+              "state": "NOT_SUBSCRIBED"
+            }
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "channel": {
+          "stored": true,
+          "opted_in": false,
+          "verified": false
+        },
+        "notes": "The address is re-read from Shopify when the receipt is processed; it is never part of the stored receipt, and it is sealed in the address vault. The row is marked store_import_unverified, so a later write that omits verified cannot verify it."
+      },
+      "requires_scopes": [
+        "read_customers"
+      ]
+    },
+    {
+      "name": "import_needs_a_strict_vault",
+      "proves": "04: no plaintext copy of an imported address is ever written",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "topic": "customers/update",
+          "x_shopify_webhook_id": "b1fd",
+          "customer": {
+            "id": 8842001
+          },
+          "hmac_valid": true
+        },
+        "state": {
+          "contact_import_enabled": true,
+          "vault_mode": "staging",
+          "customer_contact": {
+            "email": "ada@example.com"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": [],
+        "channel": {
+          "stored": false
+        }
+      },
+      "requires_scopes": [
+        "read_customers"
+      ]
+    },
+    {
+      "name": "single_opt_in_consent_verifies_as_store_opt_in",
+      "proves": "04: the shopper's explicit opt-in at the store makes the imported address sendable, marked as a store opt-in",
+      "given": {
+        "inbound": {
+          "topic": "customers/update",
+          "x_shopify_webhook_id": "b1fe",
+          "customer": {
+            "id": 8842001
+          },
+          "hmac_valid": true
+        },
+        "state": {
+          "contact_import_enabled": true,
+          "vault_mode": "strict",
+          "customer_contact": {
+            "email": "ada@example.com",
+            "email_marketing_consent": {
+              "state": "SUBSCRIBED",
+              "opt_in_level": "SINGLE_OPT_IN",
+              "consent_updated_at": "2026-08-30T12:00:00.000Z"
+            }
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": [
+          {
+            "channel": "email",
+            "status": "opted_in",
+            "basis": "explicit_user_action",
+            "source": {
+              "connection_id": "con_shopify",
+              "provider": "shopify"
+            },
+            "asserted_at": "2026-08-30T12:00:00.000Z",
+            "evidence_ref": "shopify:b1fe:single_opt_in"
+          }
+        ],
+        "channel": {
+          "stored": true,
+          "opted_in": true,
+          "verified": true,
+          "verified_by": "store_opt_in"
+        },
+        "notes": "verified_by records how the store verified it, with the connection, the evidence and the time, so it is never mistaken for an address the customer verified. A later unsubscribe, bounce or complaint still stops sending."
+      },
+      "requires_scopes": [
+        "read_customers"
+      ]
+    },
+    {
+      "name": "confirmed_opt_in_consent_verifies_as_double_opt_in",
+      "proves": "04: a double opt-in the store confirmed by email is recorded as such",
+      "given": {
+        "inbound": {
+          "topic": "customers/update",
+          "x_shopify_webhook_id": "b1ff",
+          "customer": {
+            "id": 8842001
+          },
+          "hmac_valid": true
+        },
+        "state": {
+          "contact_import_enabled": true,
+          "vault_mode": "strict",
+          "customer_contact": {
+            "email": "ada@example.com",
+            "email_marketing_consent": {
+              "state": "SUBSCRIBED",
+              "opt_in_level": "CONFIRMED_OPT_IN",
+              "consent_updated_at": "2026-08-30T12:00:00.000Z"
+            }
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": [
+          {
+            "channel": "email",
+            "status": "opted_in",
+            "basis": "explicit_user_action",
+            "source": {
+              "connection_id": "con_shopify",
+              "provider": "shopify"
+            },
+            "asserted_at": "2026-08-30T12:00:00.000Z",
+            "evidence_ref": "shopify:b1ff:confirmed_opt_in"
+          }
+        ],
+        "channel": {
+          "stored": true,
+          "opted_in": true,
+          "verified": true,
+          "verified_by": "provider_double_opt_in"
+        }
+      },
+      "requires_scopes": [
+        "read_customers"
+      ]
+    },
+    {
+      "name": "protected_customer_data_refusal_names_one_repair",
+      "proves": "08: when Shopify refuses the email read, the import pauses with one next step and the consent still counts",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "topic": "customers/update",
+          "x_shopify_webhook_id": "b200",
+          "customer": {
+            "id": 8842001,
+            "email_marketing_consent": {
+              "state": "UNSUBSCRIBED",
+              "consent_updated_at": "2026-08-30T12:00:00.000Z"
+            }
+          },
+          "hmac_valid": true
+        },
+        "state": {
+          "contact_import_enabled": true,
+          "vault_mode": "strict",
+          "customer_contact": {
+            "refused": "protected_customer_data"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "consent": [
+          {
+            "channel": "email",
+            "status": "opted_out",
+            "basis": "explicit_user_action",
+            "source": {
+              "connection_id": "con_shopify",
+              "provider": "shopify"
+            },
+            "asserted_at": "2026-08-30T12:00:00.000Z",
+            "evidence_ref": "shopify:b200"
+          }
+        ],
+        "channel": {
+          "stored": false
+        },
+        "notes": "The receipt completes and the configuration shows the repair \"Shopify protected customer data (email) not approved\" (Level 2 approval is an external gate). The webhook's opt-out is recorded whatever the read returns."
+      },
+      "requires_scopes": [
+        "read_customers"
       ]
     }
   ]

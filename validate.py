@@ -218,10 +218,32 @@ LAUNCH = {"supabase","clerk","auth0","stripe","revenuecat","shopify","woocommerc
           "segment","google_analytics","mixpanel","amplitude","custom_code"}
 BOOL_CAPS = ("live_stream","history","catalog","delivery")
 seen = set()
+FAMILY = {}
+
+def schema_name(d):
+    return os.path.basename(str(d.get("$schema", "")).split("#")[0])
+
+# A connector suite may carry companion fixtures next to its connector fixture
+# (consent sources, 4h). Only connector fixtures declare a manifest.
+CONNECTOR_SCHEMA, CONSENT_SOURCE_SCHEMA = "connector-fixture.schema.json", "consent-source-fixture.schema.json"
+for f, d in sorted(docs.items()):
+    if f.startswith("conformance/connectors/") and schema_name(d) not in (CONNECTOR_SCHEMA, CONSENT_SOURCE_SCHEMA):
+        err(f, f"connector suite files use {CONNECTOR_SCHEMA} or {CONSENT_SOURCE_SCHEMA}, not {schema_name(d)!r}")
+
+PLACEHOLDER = re.compile(r"\{([A-Za-z][A-Za-z0-9_]*)\}")
+def template_regex(template):
+    # A placeholder is one key segment: provider topics and hooks (orders/paid,
+    # whisperr/cart_updated) carry no colon, so a segment never spans one.
+    parts, last = [], 0
+    for m in PLACEHOLDER.finditer(template):
+        parts.append(re.escape(template[last:m.start()])); parts.append(r"[^:]+"); last = m.end()
+    parts.append(re.escape(template[last:]))
+    return re.compile("^" + "".join(parts) + "$")
 
 for f, d in sorted(docs.items()):
-    if not f.startswith("conformance/connectors/"): continue
+    if not f.startswith("conformance/connectors/") or schema_name(d) != CONNECTOR_SCHEMA: continue
     prov = d.get("provider"); seen.add(prov)
+    FAMILY[prov] = d.get("manifest", {}).get("family")
     man, cases = d.get("manifest", {}), d.get("cases", [])
     if man.get("provider") != prov:
         err(f, f"manifest.provider {man.get('provider')!r} != provider {prov!r}")
@@ -331,6 +353,165 @@ for f, d in sorted(docs.items()):
         if not any("consent" in c["name"] for c in cases):
             err(f, "auth/billing/commerce connectors must carry a consent-never-inferred negative (contracts/04)")
 
+    # 4g. THE EVENT CONTRACT (contracts/02, manifest.events)
+    # Templates name their provider; each signal is declared once; a declared
+    # event needs only requested scopes; a case's expected envelope uses a
+    # declared code, only that code's allowlisted properties, and an occurrence
+    # key its template can produce.
+    events = man.get("events") or []
+    default_tpl = man.get("correlation", {}).get("occurrence_key_template")
+    for t in [default_tpl] + [e.get("occurrence_key_template") for e in events]:
+        if t is not None and not t.startswith(f"{prov}:"):
+            err(f, f"occurrence key template {t!r} must start with '{prov}:' (keys are per app, across providers)")
+    by_code, signals = {}, set()
+    for e in events:
+        if e["signal"] in signals: err(f, f"events: signal {e['signal']!r} is declared twice (one signal means one code)")
+        signals.add(e["signal"])
+        by_code.setdefault(e["code"], []).append(e)
+        for sc in e.get("requires_scopes", []):
+            if sc not in requested:
+                err(f, f"events: {e['signal']!r} requires scope {sc!r} that auth.scopes never requests")
+        if e.get("historical") and caps.get("history") is not True:
+            err(f, f"events: {e['signal']!r} is historical but capabilities.history is not true")
+        if e.get("counts_as_activity"):
+            if man.get("family") != "commerce":
+                err(f, f"events: {e['signal']!r} counts as activity, but only commerce shopper actions may (contracts/11)")
+            if e.get("historical"):
+                err(f, f"events: {e['signal']!r} is historical; history never counts as activity")
+    def candidates(code, inbound):
+        # The declared events a case's expected envelope can come from: those
+        # with its code, narrowed to the signal the inbound delivery carries
+        # (its hook or topic) when one matches. A live order_paid is held to the
+        # live allowlist, not the union with the history signal's.
+        chosen = by_code.get(code) or []
+        carried = {inbound.get("hook"), inbound.get("topic")} - {None}
+        narrowed = [e for e in chosen if carried & ({e["signal"]} | set(e.get("topics", [])))]
+        return (narrowed or chosen), bool(narrowed)
+    def templates_for(pool):
+        pool = pool or [None] + events
+        out = []
+        for e in pool:
+            t = default_tpl if e is None or "occurrence_key_template" not in e else e["occurrence_key_template"]
+            if t is not None and t not in out: out.append(t)
+        return out
+    def contents_digest(inbound):
+        # contracts/02 events notes: SHA-256 over the sorted
+        # product_id/variant_id/quantity lines joined by commas, then
+        # |total_price|currency; the first 16 hex characters.
+        part = lambda v: "" if v is None else str(v)
+        lines = sorted(f"{part(l.get('product_id'))}/{part(l.get('variant_id'))}/{part(l.get('quantity'))}" for l in inbound.get("line_items", []))
+        raw = ",".join(lines) + "|" + part(inbound.get("total_price")) + "|" + part(inbound.get("currency"))
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    for c in cases:
+        env = c.get("expect", {}).get("envelope") or {}
+        code = env.get("event", {}).get("code")
+        inbound = c.get("given", {}).get("inbound") or {}
+        if events and code and code not in by_code:
+            err(f, f"case {c['name']!r}: event code {code!r} is not declared in manifest.events")
+        pool, exact = candidates(code, inbound) if code else ([], False)
+        props = env.get("event", {}).get("properties")
+        if pool and props is not None:
+            allowed = {p for e in pool for p in e["properties"]}
+            for extra in sorted(set(props) - allowed):
+                err(f, f"case {c['name']!r}: property {extra!r} is outside {code}'s allowlist")
+        # Only a delivery that names a declared signal is held to its scopes (a
+        # storefront pixel event can carry the same code under other scopes).
+        # Scopes are checked per delivery, before a signal is chosen, so a case
+        # whose delivery gets past verification (any outcome but rejected) lists
+        # the scopes of every signal its topic or hook carries: without them the
+        # runtime refuses the delivery instead of ignoring or accepting it.
+        if c.get("expect", {}).get("outcome") != "rejected":
+            carried = {inbound.get("hook"), inbound.get("topic")} - {None}
+            on_topic = [e for e in events if carried & ({e["signal"]} | set(e.get("topics", [])))]
+            needed = set().union(*[set(e.get("requires_scopes", [])) for e in on_topic])
+            missing = sorted(needed - set(c.get("requires_scopes", [])))
+            if missing:
+                what = f"emits {code}, which" if exact else f"its {'/'.join(sorted(carried))} delivery"
+                err(f, f"case {c['name']!r}: {what} requires {missing}; list them in the case's requires_scopes")
+        key = (env.get("correlation") or {}).get("occurrence_key")
+        checks = [(key, pool)] if key is not None else []
+        state = c.get("given", {}).get("state") or {}
+        checks += [(k, []) for k in state.get("already_ingested_occurrences", [])]
+        for k, kpool in checks:
+            tpls = templates_for(kpool)
+            if tpls and not any(template_regex(t).match(k) for t in tpls):
+                err(f, f"case {c['name']!r}: occurrence key {k!r} matches none of {tpls}")
+        if key is not None and pool and any("{contents_digest}" in (e.get("occurrence_key_template") or "") for e in pool):
+            want = contents_digest(inbound)
+            if not key.endswith(":" + want):
+                err(f, f"case {c['name']!r}: occurrence key {key!r} does not end with the cart contents digest {want!r}")
+
+# ---------------------------------------------------------------- 4h. store consent source fixtures
+# contracts/04, Store consent sources. The schema pins the vocabulary; these
+# checks pin the rules between fields: what the runtime must refuse, what an
+# owner attestation changes, the basis of each assertion, the evidence_ref
+# layout, and that only a recorded opt-in makes an address sendable.
+CHECKBOX, CONSENT_HOOK = "whisperr_checkbox", "whisperr/marketing_consent"
+for f, d in sorted(docs.items()):
+    if not f.startswith("conformance/connectors/") or schema_name(d) != CONSENT_SOURCE_SCHEMA: continue
+    prov = d.get("provider")
+    if FAMILY.get(prov) != "commerce":
+        err(f, f"consent sources belong to a commerce connector fixture; {prov!r} has none")
+    names = [c["name"] for c in d.get("cases", [])]
+    for n in sorted({n for n in names if names.count(n) > 1}):
+        err(f, f"case {n!r} appears twice")
+    for c in d.get("cases", []):
+        where, given, exp = f"case {c['name']!r}", c["given"], c["expect"]
+        out, consent, ch = exp["outcome"], exp.get("consent"), exp.get("channel")
+        if (out == "rejected") != ("rejection_code" in exp):
+            err(f, f"{where}: rejection_code goes with outcome rejected, and only with it")
+        if out == "rejected" and (consent or ch):
+            err(f, f"{where}: a rejected delivery records nothing")
+        if out == "superseded" and (consent or (ch or {}).get("stored")):
+            err(f, f"{where}: a superseded consent records nothing")
+        if "setups" in given and (out != "rejected" or exp.get("attestations") != 0):
+            err(f, f"{where}: refused setups are rejected and record no attestation")
+        inbound = given.get("inbound") or {}
+        if inbound.get("hook") != CONSENT_HOOK:
+            if inbound and ch and (ch.get("verified") or ch.get("opted_in")):
+                err(f, f"{where}: only a consent opts in or verifies an address (contracts/04: never inferred)")
+            if inbound and consent:
+                err(f, f"{where}: only {CONSENT_HOOK} carries consent")
+            continue
+        data = inbound["data"]
+        source, subscribed = data["source"], data["state"] == "subscribed"
+        third, backfill = source != CHECKBOX, data.get("backfill") is True
+        broken = [why for bad, why in (
+            (backfill and not (third and subscribed), "only a third-party opt-in may be a backfill"),
+            ("captured_at" in data and data["captured_at"] is None and not backfill, "only a backfill may have no time"),
+            (third and "attestation_id" not in data and given.get("attested") is not True, "a third-party consent names its attestation"),
+        ) if bad]
+        if broken and out != "rejected":
+            err(f, f"{where}: must be rejected ({'; '.join(broken)})")
+        if not broken and out == "rejected":
+            err(f, f"{where}: rejected, but breaks no wire rule")
+        if out == "rejected": continue
+        if subscribed and third and given.get("attested") is not True and out != "superseded":
+            err(f, f"{where}: a third-party opt-in without the owner's confirmed attestation is superseded")
+        for a in consent or []:
+            want = "opted_in" if subscribed else "opted_out"
+            if a["status"] != want: err(f, f"{where}: a {data['state']} consent asserts {want}")
+            basis = "imported_record" if subscribed and (third or data["surface"] == "store_sync") else "explicit_user_action"
+            if a["basis"] != basis: err(f, f"{where}: basis must be {basis!r}")
+            ref = a["evidence_ref"]
+            prefix = f"{prov}:{{delivery_id}}:{source}"
+            if not ref.startswith(prefix): err(f, f"{where}: evidence_ref must start with {prefix!r}")
+            if subscribed and third and not ref.startswith(prefix + ":{attestation_id}"):
+                err(f, f"{where}: a third-party opt-in's evidence names its attestation")
+            if data.get("source_detail") and f":{data['source_detail']}" not in ref:
+                err(f, f"{where}: evidence_ref must carry the source_detail")
+            if backfill:
+                at = "unknown" if data.get("captured_at") is None else re.sub(r"[-:]|\.\d+", "", data["captured_at"])
+                if not ref.endswith(f":backfill:{at}:{{confirmed_at}}"):
+                    err(f, f"{where}: a backfill's evidence ends :backfill:{at}:{{confirmed_at}}")
+            elif ":backfill:" in ref:
+                err(f, f"{where}: only a backfill's evidence says backfill")
+        opted_in = out == "completed" and any(a["status"] == "opted_in" for a in consent or [])
+        if opted_in and (ch or {}).get("verified_by") != "store_opt_in":
+            err(f, f"{where}: a recorded store opt-in stores the address opted in and verified_by store_opt_in")
+        if not opted_in and ch and (ch.get("opted_in") or ch.get("verified")):
+            err(f, f"{where}: an address is opted in or verified only by a recorded opt-in")
+
 missing = LAUNCH - seen
 if missing: err("conformance/connectors", f"no fixture file for launch connector(s): {sorted(missing)}")
 extra = seen - LAUNCH
@@ -357,5 +538,8 @@ if DEBT:
         print(f"  ! {prov:<12} {sc:<22} {kind}")
     print()
 
-ncases = sum(len(d.get("cases", [])) for f, d in docs.items() if f.startswith("conformance/connectors/"))
-print(f"spec OK — {len(docs)} documents, {len(seen & LAUNCH)} launch connectors, {ncases} connector cases (structural checks only)")
+suite = [d for f, d in docs.items() if f.startswith("conformance/connectors/")]
+ncases = sum(len(d.get("cases", [])) for d in suite if schema_name(d) == CONNECTOR_SCHEMA)
+nconsent = sum(len(d.get("cases", [])) for d in suite if schema_name(d) == CONSENT_SOURCE_SCHEMA)
+print(f"spec OK — {len(docs)} documents, {len(seen & LAUNCH)} launch connectors, {ncases} connector cases, "
+      f"{nconsent} consent source cases (structural checks only)")

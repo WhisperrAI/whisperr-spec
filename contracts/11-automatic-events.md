@@ -66,6 +66,18 @@ reported on the next launch arrives with that launch's `app_opened`, which is th
 Activity comes only from the app's own events. Provider webhooks, billing events, delivery
 receipts, and other source observations never count as activity, whatever their name.
 
+### Commerce activity
+
+The one exception is a store's own shoppers. For an app whose ICP is `dtc_ecom`, the shopper
+actions a commerce connector declares with `counts_as_activity` ([02](02-source-connection-manifest.md),
+`events`) count as activity once the runtime turns commerce activity on
+(`SOURCE_COMMERCE_ACTIVITY_ENABLED`, off by default). Shopify declares `order_paid`,
+`order_placed`, `checkout_started` and `checkout_updated`. WooCommerce declares none yet, so its
+events never count until its manifest declares them. Shipping, delivery, refunds,
+cancellations, customer record changes and history imports never count. Only events written
+while the switch is on count; existing rows are never relabelled, and other ICPs and sources are
+unaffected.
+
 ## Coverage
 
 Reserved events are not part of the app's event universe: they are not instrumentation targets,

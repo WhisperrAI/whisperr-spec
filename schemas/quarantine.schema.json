@@ -8,8 +8,8 @@
       "description": "Every ACKNOWLEDGED delivery is in exactly one of these. Never silently missing."
     },
     "rejection_code": {
-      "enum": ["signature_invalid", "timestamp_out_of_window", "payload_too_large", "content_type_invalid", "contract_version_unsupported"],
-      "description": "Refused BEFORE acknowledge. Nothing durable is written."
+      "enum": ["signature_invalid", "timestamp_out_of_window", "payload_too_large", "content_type_invalid", "contract_version_unsupported", "invalid_request"],
+      "description": "Refused BEFORE acknowledge. Nothing durable is written. invalid_request: an authenticated delivery that breaks the connector's wire rules (a 400), such as a WooCommerce consent with an impossible field combination."
     },
     "quarantine_code": {
       "enum": ["identity_conflict", "unregistered_event_code", "schema_violation", "mapping_ambiguous", "catalog_reference_invalid", "consent_missing_for_required_channel"]

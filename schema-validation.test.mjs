@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cpSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,8 +12,8 @@ const root = dirname(fileURLToPath(import.meta.url));
 test('all committed schemas compile and fixtures structurally conform', () => {
   const result = validateSchemas(root);
   assert.deepEqual(result.errors, []);
-  assert.equal(result.schemaCount, 16);
-  assert.equal(result.fixtureCount, 18);
+  assert.equal(result.schemaCount, 17);
+  assert.equal(result.fixtureCount, 19);
 });
 
 for (const [name, file, mutate] of [
@@ -46,6 +47,18 @@ for (const [name, file, mutate] of [
   ['v3 trackError kind outside the enum', 'conformance/automatic.json', d => { d.signalsV3.sections.errors.cases[0].steps[1].trackError.kind = 'js'; }],
   ['v3 fingerprint vector that is not hex', 'conformance/automatic.json', d => { d.signalsV3.fingerprintVectors[0].fingerprint = 'CartLoadError'; }],
   ['legacy pushOpened step in v2 automatic cases', 'conformance/automatic.json', d => { d.pushEventsV2.cases[0].steps.push({ pushOpened: { whisperr_message_id: 'm' } }); }],
+  ['unknown manifest event key', 'conformance/connectors/shopify.json', d => { d.manifest.events[0].selected = true; }],
+  ['manifest event code not snake_case', 'conformance/connectors/shopify.json', d => { d.manifest.events[0].code = 'OrderPaid'; }],
+  ['manifest event signal with a colon', 'conformance/connectors/woocommerce.json', d => { d.manifest.events[0].signal = 'woocommerce:payment_complete'; }],
+  ['channel verified_by without a verified opt-in', 'conformance/connectors/shopify.json', d => { d.cases.find(c => c.expect.channel?.verified_by).expect.channel.verified = false; }],
+  ['channel verified but not stored', 'conformance/connectors/shopify.json', d => { d.cases.find(c => c.expect.channel).expect.channel = { stored: false, verified: true }; }],
+  ['consent source outside the enum', 'conformance/connectors/woocommerce_consent_sources.json', d => { d.cases[1].given.inbound.data.source = 'newsletter_pro'; }],
+  ['consent surface outside the enum', 'conformance/connectors/woocommerce_consent_sources.json', d => { d.cases[1].given.inbound.data.surface = 'popup'; }],
+  ['consent captured_at that is not a UTC time', 'conformance/connectors/woocommerce_consent_sources.json', d => { d.cases[3].given.inbound.data.captured_at = '2025-03-01 09:00'; }],
+  ['consent source rejection code outside the taxonomy', 'conformance/connectors/woocommerce_consent_sources.json', d => { d.cases[6].expect.rejection_code = 'bad_request'; }],
+  ['consent source outcome outside the enum', 'conformance/connectors/woocommerce_consent_sources.json', d => { d.cases[0].expect.outcome = 'ignored'; }],
+  ['consent evidence without the delivery placeholder', 'conformance/connectors/woocommerce_consent_sources.json', d => { d.cases[1].expect.consent[0].evidence_ref = 'woocommerce:mailpoet'; }],
+  ['consent source case without inbound or setups', 'conformance/connectors/woocommerce_consent_sources.json', d => { delete d.cases[1].given.inbound; }],
 ]) {
   test(`validator rejects ${name}`, () => {
     const temp = mkdtempSync(join(tmpdir(), 'whisperr-schema-'));
@@ -58,6 +71,89 @@ for (const [name, file, mutate] of [
       try { rejected = validateSchemas(temp).errors.length > 0; } catch { rejected = true; }
       assert.ok(rejected, 'invalid input escaped schema compilation/validation');
     } finally { rmSync(temp, { recursive: true, force: true }); }
+  });
+}
+
+// The cross-field rules live in validate.py (JSON Schema cannot express them),
+// so these run the whole validator on a mutated copy of the checkout.
+function runValidator(file, mutate) {
+  const temp = mkdtempSync(join(tmpdir(), 'whisperr-spec-'));
+  try {
+    for (const folder of ['schemas', 'conformance']) cpSync(join(root, folder), join(temp, folder), { recursive: true });
+    for (const name of ['validate.py', 'validate-schemas.mjs', 'package.json']) cpSync(join(root, name), join(temp, name));
+    symlinkSync(join(root, 'node_modules'), join(temp, 'node_modules'), 'dir');
+    if (file) {
+      const path = join(temp, file);
+      const data = JSON.parse(readFileSync(path, 'utf8')); mutate(data);
+      writeFileSync(path, JSON.stringify(data));
+    }
+    const run = spawnSync('python3', [join(temp, 'validate.py')], { encoding: 'utf8' });
+    return { status: run.status, output: `${run.stdout}${run.stderr}` };
+  } finally { rmSync(temp, { recursive: true, force: true }); }
+}
+
+const caseNamed = (d, name) => d.cases.find(c => c.name === name);
+test('cross-field validator accepts the committed checkout', () => {
+  const { status, output } = runValidator();
+  assert.equal(status, 0, output);
+});
+
+for (const [name, file, mutate, message] of [
+  ['an occurrence key its template cannot produce', 'conformance/connectors/shopify.json',
+    d => { caseNamed(d, 'checkout_updated_is_keyed_by_cart_contents').expect.envelope.correlation.occurrence_key = 'shopify:checkout_updated:3301'; }, 'matches none of'],
+  ['a WooCommerce occurrence key without the site', 'conformance/connectors/woocommerce.json',
+    d => { caseNamed(d, 'checkout_never_waits_on_whisperr').expect.envelope.correlation.occurrence_key = 'woocommerce:woocommerce_payment_complete:4471:991'; }, 'matches none of'],
+  ['an already ingested occurrence its templates cannot produce', 'conformance/connectors/woocommerce.json',
+    d => { caseNamed(d, 'occurrence_key_is_scoped_to_the_site').given.state.already_ingested_occurrences = ['con_woo:woocommerce_payment_complete:4471:991']; }, 'matches none of'],
+  ['a template with another provider prefix', 'conformance/connectors/shopify.json',
+    d => { d.manifest.events.find(e => e.signal === 'checkouts/started').occurrence_key_template = 'checkout:{checkout_id}'; }, "must start with 'shopify:'"],
+  ['an undeclared event code', 'conformance/connectors/shopify.json',
+    d => { caseNamed(d, 'checkout_completed_needs_completed_at').expect.envelope.event.code = 'checkout_finished'; }, 'not declared in manifest.events'],
+  ['a property outside the allowlist', 'conformance/connectors/shopify.json',
+    d => { caseNamed(d, 'order_paid_carries_minimized_purchase_facts').expect.envelope.event.properties.discount_code = 'ADA10'; }, "property 'discount_code'"],
+  ['a live order carrying a history-only property', 'conformance/connectors/woocommerce.json',
+    d => { caseNamed(d, 'checkout_never_waits_on_whisperr').expect.envelope.event.properties = { order_id: '4471', status: 'processing' }; }, "property 'status'"],
+  ['a cart contents digest that does not match the line items', 'conformance/connectors/shopify.json',
+    d => { caseNamed(d, 'checkout_updated_is_keyed_by_cart_contents').given.inbound.total_price = '180.00'; }, 'cart contents digest'],
+  ['a refund case that omits the order read-back scope', 'conformance/connectors/shopify.json',
+    d => { caseNamed(d, 'refund_counts_only_successful_refund_transactions').requires_scopes = ['read_orders']; }, "requires ['read_customers']"],
+  ['an ignored fulfillment case that omits the topic scopes', 'conformance/connectors/shopify.json',
+    d => { caseNamed(d, 'late_fulfillment_update_is_not_a_new_shipment').requires_scopes = ['read_fulfillments']; }, "delivery requires ['read_customers', 'read_orders']"],
+  ['an event that needs an unrequested scope', 'conformance/connectors/shopify.json',
+    d => { d.manifest.events[0].requires_scopes.push('read_all_orders'); }, "requires scope 'read_all_orders'"],
+  ['a signal declared twice', 'conformance/connectors/woocommerce.json',
+    d => { d.manifest.events.push({ ...d.manifest.events[0] }); }, 'declared twice'],
+  ['a historical event without history', 'conformance/connectors/shopify.json',
+    d => { d.manifest.events[0].historical = true; }, 'capabilities.history is not true'],
+  ['a historical event that counts as activity', 'conformance/connectors/woocommerce.json',
+    d => { d.manifest.events.find(e => e.historical).counts_as_activity = true; }, 'history never counts as activity'],
+  ['an activity event outside commerce', 'conformance/connectors/stripe.json',
+    d => { d.manifest.events = [{ signal: 'invoice/paid', code: 'invoice_paid', properties: [], counts_as_activity: true }]; }, 'only commerce shopper actions'],
+  ['an unattested third-party opt-in that is recorded', 'conformance/connectors/woocommerce_consent_sources.json',
+    d => { d.cases[0].expect = { outcome: 'completed', consent: [] }; }, 'is superseded'],
+  ['a third-party opt-in recorded as explicit_user_action', 'conformance/connectors/woocommerce_consent_sources.json',
+    d => { d.cases[1].expect.consent[0].basis = 'explicit_user_action'; }, "basis must be 'imported_record'"],
+  ['a third-party opt-in whose evidence omits the attestation', 'conformance/connectors/woocommerce_consent_sources.json',
+    d => { d.cases[1].expect.consent[0].evidence_ref = 'woocommerce:{delivery_id}:mailpoet'; }, 'names its attestation'],
+  ['a backfill whose evidence has the wrong time', 'conformance/connectors/woocommerce_consent_sources.json',
+    d => { d.cases[3].expect.consent[0].evidence_ref = 'woocommerce:{delivery_id}:mailpoet:{attestation_id}:backfill:unknown:{confirmed_at}'; }, ':backfill:20250301T090000Z:'],
+  ['a backfill from the plugin checkbox that is accepted', 'conformance/connectors/woocommerce_consent_sources.json',
+    d => { d.cases[7].expect = { outcome: 'completed', consent: [] }; }, 'must be rejected'],
+  ['a rejection that breaks no wire rule', 'conformance/connectors/woocommerce_consent_sources.json',
+    d => { delete d.cases[7].given.inbound.data.backfill; }, 'breaks no wire rule'],
+  ['a store opt-in that does not verify the address', 'conformance/connectors/woocommerce_consent_sources.json',
+    d => { d.cases[1].expect.channel = { stored: true, opted_in: true, verified: false }; }, 'verified_by store_opt_in'],
+  ['a purchase that verifies an address', 'conformance/connectors/woocommerce_consent_sources.json',
+    d => { d.cases[13].expect.channel = { stored: true, opted_in: true, verified: true, verified_by: 'store_opt_in' }; }, 'only a consent opts in or verifies'],
+  ['an opt-out that opts the address in', 'conformance/connectors/woocommerce_consent_sources.json',
+    d => { d.cases[9].expect.channel = { stored: true, opted_in: true }; }, 'only by a recorded opt-in'],
+  ['consent sources for a non-commerce provider', 'conformance/connectors/woocommerce_consent_sources.json',
+    d => { d.provider = 'stripe'; }, 'belong to a commerce connector'],
+]) {
+  test(`cross-field validator rejects ${name}`, () => {
+    const { status, output } = runValidator(file, mutate);
+    assert.notEqual(status, 0, 'invalid input passed validate.py');
+    assert.ok(output.includes(message), output);
   });
 }
 

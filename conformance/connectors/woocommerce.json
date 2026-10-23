@@ -37,8 +37,102 @@
       "delivery": false
     },
     "correlation": {
-      "occurrence_key_template": "woocommerce:{hook}:{object_id}:{local_seq}"
+      "occurrence_key_template": "woocommerce:{site_id}:{hook}:{object_id}:{local_seq}"
     },
+    "events": [
+      {
+        "signal": "woocommerce_payment_complete",
+        "code": "order_paid",
+        "properties": [
+          "order_id",
+          "amount_minor",
+          "currency",
+          "item_count",
+          "product_ids",
+          "coupon_used",
+          "payment_method",
+          "customer_type"
+        ],
+        "notes": "amount is a decimal string or amount_minor on the wire; parsed exactly. customer_type is derived from the subject (registered or guest), never read."
+      },
+      {
+        "signal": "woocommerce_order_status_cancelled",
+        "code": "order_cancelled",
+        "properties": [
+          "order_id"
+        ]
+      },
+      {
+        "signal": "woocommerce_order_refunded",
+        "code": "order_refunded",
+        "properties": [
+          "order_id",
+          "refund_id",
+          "refund_amount_minor",
+          "currency",
+          "full_refund"
+        ],
+        "notes": "object_id is the refund. refund_amount_minor is Shopify's name on the shared order_refunded code."
+      },
+      {
+        "signal": "woocommerce_order_status_completed",
+        "code": "order_fulfilled",
+        "properties": [
+          "order_id"
+        ]
+      },
+      {
+        "signal": "woocommerce_new_customer",
+        "code": "customer_created",
+        "properties": [],
+        "notes": "No name, email or address."
+      },
+      {
+        "signal": "woocommerce_customer_save",
+        "code": "customer_updated",
+        "properties": []
+      },
+      {
+        "signal": "whisperr/cart_updated",
+        "code": "cart_updated",
+        "properties": [
+          "cart_id",
+          "item_count",
+          "value_minor",
+          "currency",
+          "product_ids"
+        ],
+        "notes": "cart_id is 32 hex characters; value is a decimal string or value_minor on the wire."
+      },
+      {
+        "signal": "whisperr/checkout_started",
+        "code": "checkout_started",
+        "properties": [
+          "cart_id",
+          "item_count",
+          "value_minor",
+          "currency",
+          "product_ids"
+        ]
+      },
+      {
+        "signal": "whisperr/history_order",
+        "code": "order_paid",
+        "properties": [
+          "order_id",
+          "amount_minor",
+          "currency",
+          "item_count",
+          "product_ids",
+          "coupon_used",
+          "payment_method",
+          "customer_type",
+          "status"
+        ],
+        "historical": true,
+        "notes": "History batches only (up to 730 days). Follows order_paid's selection; never live coverage."
+      }
+    ],
     "freshness": {
       "catalog_threshold_seconds": 3600
     },
@@ -73,12 +167,31 @@
           "hook": "woocommerce_payment_complete",
           "object_id": 4471,
           "local_seq": "991",
-          "whisperr_reachable": false
+          "whisperr_reachable": false,
+          "site_id": "6f1c2a9e-0b7d-4c55-9a51-2d0f6c3e8b14"
         }
       },
       "expect": {
         "outcome": "accepted",
-        "notes": "TIMED TEST. With Whisperr fully unreachable, checkout completes at normal speed. Every call is async/deferred; the event lands in the plugin's local queue."
+        "notes": "TIMED TEST. With Whisperr fully unreachable, checkout completes at normal speed. Every call is async/deferred; the event lands in the plugin's local queue.",
+        "envelope": {
+          "mode": "live",
+          "event": {
+            "code": "order_paid"
+          },
+          "origin": {
+            "provider": "woocommerce",
+            "source_kind": "webhook",
+            "provider_event_id": "woocommerce_payment_complete:4471:991"
+          },
+          "time": {
+            "source_sequence": "991"
+          },
+          "correlation": {
+            "idempotency_key": "con_woo:woocommerce_payment_complete:4471:991",
+            "occurrence_key": "woocommerce:6f1c2a9e-0b7d-4c55-9a51-2d0f6c3e8b14:woocommerce_payment_complete:4471:991"
+          }
+        }
       },
       "demonstrates_capabilities": [
         "live_stream"
@@ -262,6 +375,128 @@
         },
         "consent": [],
         "notes": "A Woo customer id is a Woo customer id. It never becomes a claim about the Clerk user, and the billing email creates no consent."
+      }
+    },
+    {
+      "name": "occurrence_key_is_scoped_to_the_site",
+      "proves": "01: a delivery ID is unique only within one site's outbox, so the occurrence names the site",
+      "negative": true,
+      "given": {
+        "inbound": {
+          "site_id": "0c5e7d21-9a43-4f86-b2e1-7d3a9c4f5e60",
+          "hook": "woocommerce_payment_complete",
+          "object_id": 4471,
+          "local_seq": "991"
+        },
+        "state": {
+          "already_ingested_occurrences": [
+            "woocommerce:6f1c2a9e-0b7d-4c55-9a51-2d0f6c3e8b14:woocommerce_payment_complete:4471:991"
+          ]
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event": {
+            "code": "order_paid"
+          },
+          "correlation": {
+            "occurrence_key": "woocommerce:0c5e7d21-9a43-4f86-b2e1-7d3a9c4f5e60:woocommerce_payment_complete:4471:991"
+          }
+        },
+        "notes": "A second store in the workspace, or the same store re-paired after a reinstall (its outbox restarts), sends the same delivery ID. It is a different order and must not correlate with the first."
+      },
+      "demonstrates_capabilities": [
+        "live_stream"
+      ]
+    },
+    {
+      "name": "cart_updated_carries_only_the_cart_projection",
+      "proves": "01: the plugin's cart hook projects to the allowlisted cart facts",
+      "given": {
+        "inbound": {
+          "site_id": "6f1c2a9e-0b7d-4c55-9a51-2d0f6c3e8b14",
+          "hook": "whisperr/cart_updated",
+          "object_id": 77,
+          "local_seq": "996",
+          "data": {
+            "cart_id": "9f2c4e1a7b3d5f60a8c2e4b6d8f0a1c3",
+            "item_count": 3,
+            "value": "187.00",
+            "currency": "EUR",
+            "product_ids": [
+              "8471",
+              "9002"
+            ]
+          },
+          "contact": {
+            "email": "ada@example.com"
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event": {
+            "code": "cart_updated",
+            "properties": {
+              "cart_id": "9f2c4e1a7b3d5f60a8c2e4b6d8f0a1c3",
+              "item_count": 3,
+              "value_minor": 18700,
+              "currency": "EUR",
+              "product_ids": [
+                "8471",
+                "9002"
+              ]
+            }
+          },
+          "correlation": {
+            "occurrence_key": "woocommerce:6f1c2a9e-0b7d-4c55-9a51-2d0f6c3e8b14:whisperr/cart_updated:77:996"
+          }
+        },
+        "consent": [],
+        "notes": "The contact email never becomes a property or a consent; with contact_sync it is stored as a pending address only."
+      },
+      "demonstrates_capabilities": [
+        "live_stream"
+      ]
+    },
+    {
+      "name": "refund_uses_the_shared_commerce_property_names",
+      "proves": "05: order_refunded is shared with Shopify, so WooCommerce projects the same property names",
+      "given": {
+        "inbound": {
+          "site_id": "6f1c2a9e-0b7d-4c55-9a51-2d0f6c3e8b14",
+          "hook": "woocommerce_order_refunded",
+          "object_id": 5120,
+          "local_seq": "997",
+          "data": {
+            "order_id": "4471",
+            "refund_id": "5120",
+            "amount": "29.00",
+            "currency": "EUR",
+            "full_refund": false
+          }
+        }
+      },
+      "expect": {
+        "outcome": "accepted",
+        "envelope": {
+          "event": {
+            "code": "order_refunded",
+            "properties": {
+              "order_id": "4471",
+              "refund_id": "5120",
+              "refund_amount_minor": 2900,
+              "currency": "EUR",
+              "full_refund": false
+            }
+          },
+          "correlation": {
+            "occurrence_key": "woocommerce:6f1c2a9e-0b7d-4c55-9a51-2d0f6c3e8b14:woocommerce_order_refunded:5120:997"
+          }
+        },
+        "notes": "A workspace with both stores approves one order_refunded definition whose schema is the union of the two; a store adds properties, it never changes a shared one."
       }
     }
   ]

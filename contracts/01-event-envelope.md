@@ -144,6 +144,17 @@ an occurrence key: a subscription may update repeatedly and an invoice may have
 multiple payment attempts. Include the provider event ID. Two connections seeing
 that same event correlate; distinct updates to the same object remain distinct.
 
+The reverse holds for facts a provider re-sends on every update. A manifest event may declare its
+own template ([02](02-source-connection-manifest.md), `events`): Shopify keys `checkout_started`
+by checkout (`shopify:checkout_started:{checkout_id}`), `checkout_updated` by the cart's contents,
+and `order_shipped` / `order_delivered` by fulfillment, so a repeat deduplicates. Such an event
+carries only properties that never change for its key; otherwise a repeat would conflict.
+
+A key must be unique across the app, not just the connection. A WooCommerce delivery ID
+(`{hook}:{object_id}:{local_seq}`) is unique only in one site's outbox, which restarts when the
+plugin is reinstalled, so its occurrence key names the site:
+`woocommerce:{site_id}:{hook}:{object_id}:{local_seq}`.
+
 ## Invariants
 
 1. An envelope with `mode: test` never reaches production evaluation or delivery.
