@@ -12,12 +12,13 @@
     "description": { "type": "string" },
     "sections": {
       "type": "object",
-      "required": ["restoreIdentify", "appLanguage", "anonymousPush", "pushRegistration", "versionContext", "serverVersionContext"],
+      "required": ["restoreIdentify", "appLanguage", "anonymousPush", "anonymousReset", "pushRegistration", "versionContext", "serverVersionContext"],
       "additionalProperties": false,
       "properties": {
         "restoreIdentify": { "$ref": "#/$defs/section" },
         "appLanguage": { "$ref": "#/$defs/section" },
         "anonymousPush": { "$ref": "#/$defs/section" },
+        "anonymousReset": { "$ref": "#/$defs/section" },
         "pushRegistration": { "$ref": "#/$defs/section" },
         "versionContext": { "$ref": "#/$defs/section" },
         "serverVersionContext": { "$ref": "#/$defs/section" }
@@ -39,10 +40,10 @@
           "items": { "enum": ["mobile", "web", "server"] }
         },
         "supersedes": {
-          "description": "Legacy cases whose expected requests contradict this section. An SDK that runs this section skips them. Format: <fixture file>:<case name>.",
+          "description": "Legacy cases, or cases of an earlier v2 section, whose expected requests contradict this section. An SDK that runs this section skips them. Format: <fixture file>:<case name>.",
           "type": "array",
           "uniqueItems": true,
-          "items": { "type": "string", "pattern": "^(push|anonymous|automatic|wire)\\.json:[a-z0-9_]+$" }
+          "items": { "type": "string", "pattern": "^(push|anonymous|automatic|wire|v2)\\.json:[a-z0-9_]+$" }
         },
         "cases": {
           "type": "array",
