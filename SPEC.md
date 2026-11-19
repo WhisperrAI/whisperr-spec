@@ -399,9 +399,21 @@ lifecycle:
   claim — never by inference, and never across two different handles.
 - **`reset()` (logout) rotates the handle.** The next person on the same device
   is a new anonymous visitor; nothing they do can attach to the previous user.
+- **`reset()` without a user changes nothing.** When no user is identified
+  (none since the last `reset()`, and none restored at start), the device is
+  still the same anonymous visitor: `reset()` keeps the handle, the stored
+  push permission and the push pair, and sends nothing. Apps often call
+  `reset()` whenever they see no signed-in user (at every launch, on every
+  signed-out auth callback). Rotating there would mint a new anonymous user
+  per call, each with a fresh permission report, and the next `identify()`
+  could promote only the last handle; the others stay behind as orphaned
+  anonymous users. An SDK that cannot tell yet (its stored identity is still
+  loading) waits for it, or rotates as before.
 
 These flows are executable in
-[`conformance/anonymous.json`](conformance/anonymous.json).
+[`conformance/anonymous.json`](conformance/anonymous.json), and the reset
+without a user in the `anonymousReset` section of
+[`conformance/v2.json`](conformance/v2.json).
 
 Contract v2 uses the same handle for the [anonymous identify](#anonymous-identify)
 (a push token or an app language before `identify()`). Mobile SDKs that keep
@@ -513,7 +525,7 @@ are sent as lowercase hex. The optional `kind`, `platform`, `push_env`,
   - **`reset()` (logout), contract v2: the token moves to the next visitor.**
     The device keeps its token after a logout, so the SDK keeps it
     registered, but never under the user who left. When the SDK holds a
-    last-sent pair, `reset()`:
+    last-sent pair and a user is identified, `reset()`:
     1. sends a partial identify that opts the token out under the pair's
        subject (`{external_user_id, channels: [{push, token, opted_in: false}]}`,
        or the same with `anonymous_id` for an anonymous pair);
@@ -854,7 +866,8 @@ Every automatic event also carries these **flat** keys in `properties`:
   (iOS `getNotificationSettings`), the SDK reads it on each move to the
   foreground; the off switch stops this read. The app can always report it
   through the SDK's permission API. `reset()` forgets the stored status, so the
-  next user on the device gets a fresh report. While the user is opted out the
+  next user on the device gets a fresh report (a `reset()` without a user keeps
+  it, see [Anonymous visitors](#anonymous-visitors)). While the user is opted out the
   SDK sends nothing and keeps the stored status unchanged. The event is the only
   record of the permission: an SDK does not also send it as an identify trait.
   An SDK whose permission API uses other names maps them to these values
@@ -1070,6 +1083,7 @@ them and stays conformant to v1.
 | `v2.json` | `restoreIdentify` | [Restore identify at start](#restore-identify-at-start) | mobile, web |
 | `v2.json` | `appLanguage` | [`app_language`](#app_language) | mobile, web |
 | `v2.json` | `anonymousPush` | [Anonymous push token lane](#push-tokens) and the v2 `reset()` | mobile |
+| `v2.json` | `anonymousReset` | [`reset()` without a user changes nothing](#anonymous-visitors) | mobile |
 | `v2.json` | `pushRegistration` | [Token fields](#token-fields), 7-day re-registration | mobile |
 | `v2.json` | `versionContext` | [Version context](#version-context), client | mobile, web |
 | `v2.json` | `serverVersionContext` | [Version context](#version-context), server | server |
@@ -1086,7 +1100,8 @@ them and stays conformant to v1.
 3. For each section it runs, skip the legacy cases the section lists in
    `supersedes` (`<file>:<case name>`). Those cases pin v1 behavior that the v2
    feature changes on purpose (for example, the in-memory token buffer). Run
-   every other legacy case unchanged.
+   every other legacy case unchanged. A later section can also supersede a
+   case of an earlier v2 section (`v2.json:<case name>`); skip it the same way.
 4. For `pushEventsV2`, run its cases on the `automatic.json` harness with the
    two new steps (`receivePush`, `openPush`), and skip its `supersedes` cases.
 5. For `signalsV3`, run each section whose `appliesTo` names the SDK on the

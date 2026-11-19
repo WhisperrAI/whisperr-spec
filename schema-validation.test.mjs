@@ -229,7 +229,9 @@ test('every superseded legacy case exists', () => {
   assert.ok(refs.length > 0);
   for (const ref of refs) {
     const [file, name] = ref.split(':');
-    assert.ok(load(file).cases.some(c => c.name === name), ref);
+    // A later v2 section may supersede a case of an earlier one.
+    const cases = file === 'v2.json' ? Object.values(v2.sections).flatMap(s => s.cases) : load(file).cases;
+    assert.ok(cases.some(c => c.name === name), ref);
   }
 });
 

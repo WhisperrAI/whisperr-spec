@@ -1415,6 +1415,223 @@
         }
       ]
     },
+    "anonymousReset": {
+      "description": "reset() without a user changes nothing (SPEC.md -> Anonymous visitors). When no user is identified, the device is still the same anonymous visitor: reset() keeps the anonymous handle, the stored push permission and the push pair, and sends nothing. Apps call reset() whenever they see no signed-in user; rotating there would mint one anonymous user per call (each with a fresh push_permission_changed), and identify() would promote only the last handle. A reset() after identify() still rotates the handle once; a second reset() before the next identify() keeps the new handle. These cases have no device block. A pushPermission step is an explicit report, so the SDK sends push_permission_changed even with automatic events off.",
+      "appliesTo": [
+        "mobile"
+      ],
+      "supersedes": [
+        "v2.json:reset_before_identify_moves_the_token_to_a_new_handle"
+      ],
+      "cases": [
+        {
+          "name": "reset_without_a_user_keeps_the_handle_and_the_permission",
+          "steps": [
+            {
+              "track": {
+                "eventType": "pricing_viewed"
+              }
+            },
+            {
+              "pushPermission": "denied"
+            },
+            {
+              "reset": true
+            },
+            {
+              "pushPermission": "denied"
+            },
+            {
+              "reset": true
+            },
+            {
+              "pushPermission": "denied"
+            },
+            {
+              "track": {
+                "eventType": "pricing_viewed"
+              }
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "anonymous_id": "$anon_a",
+                  "event_type": "pricing_viewed",
+                  "properties": {}
+                }
+              ]
+            },
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "event_type": "push_permission_changed",
+                  "properties": {
+                    "os_name": "$platform",
+                    "platform": "$platform",
+                    "sdk_name": "$sdk_name",
+                    "sdk_version": "$sdk_version",
+                    "status": "denied"
+                  }
+                }
+              ]
+            },
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "anonymous_id": "$anon_a",
+                  "event_type": "pricing_viewed",
+                  "properties": {}
+                }
+              ]
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "anonymous_id": "$anon_a"
+              }
+            }
+          ]
+        },
+        {
+          "name": "reset_without_a_user_keeps_the_anonymous_token",
+          "steps": [
+            {
+              "setPushToken": "fcm_tok_a"
+            },
+            {
+              "reset": true
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "anonymous_id": "$anon_a",
+                "channels": [
+                  {
+                    "channel": "push",
+                    "address": "fcm_tok_a",
+                    "opted_in": true
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "reset_after_identify_rotates_the_handle_once",
+          "steps": [
+            {
+              "track": {
+                "eventType": "pricing_viewed"
+              }
+            },
+            {
+              "identify": {
+                "externalUserId": "user_1"
+              }
+            },
+            {
+              "reset": true
+            },
+            {
+              "track": {
+                "eventType": "pricing_viewed"
+              }
+            },
+            {
+              "reset": true
+            },
+            {
+              "track": {
+                "eventType": "pricing_viewed"
+              }
+            },
+            {
+              "identify": {
+                "externalUserId": "user_2"
+              }
+            }
+          ],
+          "expectedRequests": [
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "anonymous_id": "$anon_a",
+                  "event_type": "pricing_viewed",
+                  "properties": {}
+                }
+              ]
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_1",
+                "anonymous_id": "$anon_a"
+              }
+            },
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "anonymous_id": "$anon_b",
+                  "event_type": "pricing_viewed",
+                  "properties": {}
+                }
+              ]
+            },
+            {
+              "endpoint": "/v1/events/batch",
+              "events": [
+                {
+                  "anonymous_id": "$anon_b",
+                  "event_type": "pricing_viewed",
+                  "properties": {}
+                }
+              ]
+            },
+            {
+              "endpoint": "/v1/identify",
+              "body": {
+                "external_user_id": "user_2",
+                "anonymous_id": "$anon_b"
+              }
+            }
+          ]
+        }
+      ]
+    },
     "pushRegistration": {
       "description": "C4 push contract v2 (SPEC.md -> Token fields, Re-registration). With environment detection on (a device block), every opted-in push entry carries kind (explicit in the step), platform ($platform, the SDK's own value), client_app_id, provider_project (not for apns), and push_env (apns only). The opt-out entry of a rotated token carries only channel, address and opted_in. The SDK re-sends the same token for the same subject when setPushToken is called and the pair was delivered 7 days (168 hours) ago or more (injected clock); the pair stores sent_at. An SDK whose token kind is fixed (Swift: apns) runs only the cases whose kind it produces.",
       "appliesTo": [

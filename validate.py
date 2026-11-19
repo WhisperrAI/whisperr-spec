@@ -173,7 +173,10 @@ if client:
 # A v2 section may supersede legacy cases. Each entry must name a legacy case
 # that exists, so an SDK never skips a case by a stale or misspelled name.
 def legacy_names(fixture):
-    return {c["name"] for c in docs.get(f"conformance/{fixture}", {}).get("cases", [])}
+    doc = docs.get(f"conformance/{fixture}", {})
+    if fixture == "v2.json":  # a later section may supersede an earlier one's case
+        return {c["name"] for sec in doc.get("sections", {}).values() for c in sec.get("cases", [])}
+    return {c["name"] for c in doc.get("cases", [])}
 v2 = docs.get("conformance/v2.json", {})
 v2_sections = [("conformance/v2.json", n, sec) for n, sec in v2.get("sections", {}).items()]
 if "pushEventsV2" in auto:
